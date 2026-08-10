@@ -1,0 +1,24 @@
+{
+    "topic": "bluecat/shelly_wohnzimmer/sensor/state",
+    "pos": [
+        -71.3,
+        -626.2
+    ],
+    "tx_power": -69.45,
+    "n_factor": 2.78,
+    "r_min": 8.11,
+    "r_max": 2.79,
+    "ble_addresses": [
+        "b0:81:84:f5:8f:0c"
+    ],
+    "sensor_id": "shelly_wohnzimmer",
+    "name": "Shelly Wohnzimmer",
+    "implementation": "shelly",
+    "enabled": true,
+    "availability_topic": "bluecat/shelly_wohnzimmer/sensor/status",
+    "rssi_limit": -110.0,
+    "q_variance": 0.1,
+    "calibration_status": "uncalibrated",
+    "position_configured": true,
+    "ble_mac_source": "identity"
+}

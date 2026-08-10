@@ -1,0 +1,10 @@
+-- Journal begins at Wed 2024-10-23 04:05:47 BST. --
+Jul 30 23:14:55 raspberrypi python[18198]:   File "/home/pi/Documents/bluetooth2mqtt/ron/.bluecat-sensor/lib/python3.9/site-packages/dbus_next/message_bus.py", line 457, in _finalize
+Jul 30 23:14:55 raspberrypi python[18198]:     handler(None, err)
+Jul 30 23:14:55 raspberrypi python[18198]:   File "/home/pi/Documents/bluetooth2mqtt/ron/.bluecat-sensor/lib/python3.9/site-packages/dbus_next/message_bus.py", line 586, in reply_notify
+Jul 30 23:14:55 raspberrypi python[18198]:     callback(reply, err)
+Jul 30 23:14:55 raspberrypi python[18198]:   File "/home/pi/Documents/bluetooth2mqtt/ron/.bluecat-sensor/lib/python3.9/site-packages/dbus_next/message_bus.py", line 970, in add_match_notify
+Jul 30 23:14:55 raspberrypi python[18198]:     if msg.message_type == MessageType.ERROR:
+Jul 30 23:14:55 raspberrypi python[18198]: AttributeError: 'NoneType' object has no attribute 'message_type'
+Jul 30 23:14:55 raspberrypi python[18198]: Mit MQTT verbunden: 192.168.2.44
+Jul 30 23:14:55 raspberrypi python[18198]: Starte Ron Raspberry Pi (ron); Ziel=c6:5c:bd:1f:77:56

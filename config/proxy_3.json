@@ -1,0 +1,8 @@
+{
+    "topic": "bluecat/proxy3/sensor/state",
+    "pos": [77.1, -625.0],
+    "tx_power": -55.73,
+    "n_factor": 3.45,
+    "r_min": 1.54,
+    "r_max": 4.73
+}

@@ -1,0 +1,226 @@
+[
+  {
+    "receiver": "kunibert",
+    "transmitter": "ron",
+    "distance_cm": 632.4173463781651,
+    "baseline_rssi": -75.26666666666667,
+    "variance": 8.960919540229884,
+    "sample_count": 30
+  },
+  {
+    "receiver": "ron",
+    "transmitter": "kunibert",
+    "distance_cm": 632.4173463781651,
+    "baseline_rssi": -76.4,
+    "variance": 8.386206896551721,
+    "sample_count": 30
+  },
+  {
+    "receiver": "shelly_wohnzimmer",
+    "transmitter": "ron",
+    "distance_cm": 148.40758066891325,
+    "baseline_rssi": -57.8,
+    "variance": 24.234482758620693,
+    "sample_count": 30
+  },
+  {
+    "receiver": "shelly_sz_lichtschrank",
+    "transmitter": "ron",
+    "distance_cm": 497.04222154662074,
+    "baseline_rssi": -74.04761904761905,
+    "variance": 5.047619047619047,
+    "sample_count": 21
+  },
+  {
+    "receiver": "shelly_sz_lichtschrank",
+    "transmitter": "kunibert",
+    "distance_cm": 309.1760178280327,
+    "baseline_rssi": -69.4,
+    "variance": 15.696551724137937,
+    "sample_count": 30
+  },
+  {
+    "receiver": "shelly_wohnzimmer",
+    "transmitter": "kunibert",
+    "distance_cm": 630.2460868581416,
+    "baseline_rssi": -86.6,
+    "variance": 21.62758620689655,
+    "sample_count": 30
+  },
+  {
+    "receiver": "shelly_schlafzimmer",
+    "transmitter": "ron",
+    "distance_cm": 195.59345592324917,
+    "baseline_rssi": -64.06666666666666,
+    "variance": 20.47816091954023,
+    "sample_count": 30
+  },
+  {
+    "receiver": "shelly_schlafzimmer",
+    "transmitter": "kunibert",
+    "distance_cm": 527.6386073819845,
+    "baseline_rssi": -82.78571428571429,
+    "variance": 10.322751322751323,
+    "sample_count": 28
+  },
+  {
+    "receiver": "shelly_wohnzimmer_dim_sb",
+    "transmitter": "ron",
+    "distance_cm": 386.97913380439513,
+    "baseline_rssi": -51.32,
+    "variance": 1.5600000000000003,
+    "sample_count": 25
+  },
+  {
+    "receiver": "shelly_wohnzimmer_dim_sb",
+    "transmitter": "kunibert",
+    "distance_cm": 903.0575009377864,
+    "baseline_rssi": -87.13333333333334,
+    "variance": 41.6367816091954,
+    "sample_count": 30
+  },
+  {
+    "receiver": "shelly_sz_lichtschrank",
+    "transmitter": "tom_esp",
+    "distance_cm": 640.2328092186466,
+    "baseline_rssi": -74.1,
+    "variance": 6.644827586206894,
+    "sample_count": 30
+  },
+  {
+    "receiver": "shelly_wohnzimmer",
+    "transmitter": "tom_esp",
+    "distance_cm": 213.93094680293447,
+    "baseline_rssi": -54.86666666666667,
+    "variance": 1.7747126436781615,
+    "sample_count": 30
+  },
+  {
+    "receiver": "shelly_wohnzimmer_dim_sb",
+    "transmitter": "tom_esp",
+    "distance_cm": 220.0476539297795,
+    "baseline_rssi": -52.166666666666664,
+    "variance": 26.35057471264368,
+    "sample_count": 30
+  },
+  {
+    "receiver": "shelly_schlafzimmer",
+    "transmitter": "tom_esp",
+    "distance_cm": 319.6439268936609,
+    "baseline_rssi": -66.4,
+    "variance": 3.2137931034482774,
+    "sample_count": 30
+  },
+  {
+    "receiver": "tom_esp",
+    "transmitter": "ron",
+    "distance_cm": 217.748662452838,
+    "baseline_rssi": -45.94736842105263,
+    "variance": 1.0,
+    "sample_count": 19
+  },
+  {
+    "receiver": "ron",
+    "transmitter": "tom_esp",
+    "distance_cm": 217.748662452838,
+    "baseline_rssi": -56.416666666666664,
+    "variance": 1.0,
+    "sample_count": 24
+  },
+  {
+    "receiver": "tom_esp",
+    "transmitter": "kunibert",
+    "distance_cm": 829.5133151432833,
+    "baseline_rssi": -71.89655172413794,
+    "variance": 2.738916256157635,
+    "sample_count": 29
+  },
+  {
+    "receiver": "kunibert",
+    "transmitter": "tom_esp",
+    "distance_cm": 829.5133151432833,
+    "baseline_rssi": -79.4,
+    "variance": 1.0,
+    "sample_count": 30
+  },
+  {
+    "receiver": "arnd_esp",
+    "transmitter": "tom_esp",
+    "distance_cm": 858.1015907222175,
+    "baseline_rssi": -64.9,
+    "variance": 1.0,
+    "sample_count": 30
+  },
+  {
+    "receiver": "tom_esp",
+    "transmitter": "arnd_esp",
+    "distance_cm": 858.1015907222175,
+    "baseline_rssi": -62.53333333333333,
+    "variance": 1.0,
+    "sample_count": 30
+  },
+  {
+    "receiver": "ron",
+    "transmitter": "arnd_esp",
+    "distance_cm": 696.3544643355135,
+    "baseline_rssi": -78.2,
+    "variance": 1.2,
+    "sample_count": 30
+  },
+  {
+    "receiver": "shelly_schlafzimmer",
+    "transmitter": "arnd_esp",
+    "distance_cm": 538.4576677882858,
+    "baseline_rssi": -69.2,
+    "variance": 25.958620689655174,
+    "sample_count": 30
+  },
+  {
+    "receiver": "shelly_sz_lichtschrank",
+    "transmitter": "arnd_esp",
+    "distance_cm": 224.3897724942026,
+    "baseline_rssi": -52.92857142857143,
+    "variance": 5.846560846560846,
+    "sample_count": 28
+  },
+  {
+    "receiver": "shelly_wohnzimmer_dim_sb",
+    "transmitter": "arnd_esp",
+    "distance_cm": 875.9120789211665,
+    "baseline_rssi": -78.46666666666667,
+    "variance": 38.11954022988506,
+    "sample_count": 30
+  },
+  {
+    "receiver": "shelly_wohnzimmer",
+    "transmitter": "arnd_esp",
+    "distance_cm": 644.6441266311205,
+    "baseline_rssi": -71.0,
+    "variance": 1.8181818181818181,
+    "sample_count": 23
+  },
+  {
+    "receiver": "arnd_esp",
+    "transmitter": "ron",
+    "distance_cm": 696.3544643355135,
+    "baseline_rssi": -70.75862068965517,
+    "variance": 8.54679802955665,
+    "sample_count": 29
+  },
+  {
+    "receiver": "arnd_esp",
+    "transmitter": "kunibert",
+    "distance_cm": 224.4,
+    "baseline_rssi": -63.0,
+    "variance": 11.571428571428571,
+    "sample_count": 29
+  },
+  {
+    "receiver": "kunibert",
+    "transmitter": "arnd_esp",
+    "distance_cm": 224.4,
+    "baseline_rssi": -71.93333333333334,
+    "variance": 24.133333333333326,
+    "sample_count": 30
+  }
+]

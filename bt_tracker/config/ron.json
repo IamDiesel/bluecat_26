@@ -1,0 +1,27 @@
+{
+    "topic": "bluecat/ron/sensor/state",
+    "pos": [
+        77.1,
+        -627.7
+    ],
+    "tx_power": -70.07,
+    "n_factor": 2.2,
+    "r_min": 18.74,
+    "r_max": 0.97,
+    "sensor_id": "ron",
+    "name": "Ron Raspberry Pi",
+    "implementation": "raspberry_pi",
+    "enabled": true,
+    "calibration_status": "calibrated",
+    "availability_topic": "bluecat/ron/sensor/status",
+    "ble_addresses": [
+        "8a:88:4b:c3:4c:f7"
+    ],
+    "rssi_limit": -110.0,
+    "q_variance": 0.1,
+    "position_configured": true,
+    "ble_mac_source": "identity",
+    "calibration_points": 11,
+    "calibration_rms_db": 8.296,
+    "calibration_r_squared": 0.2723
+}

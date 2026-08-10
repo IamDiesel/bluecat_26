@@ -1,0 +1,24 @@
+{
+    "sensor_id": "shelly_wohnzimmer_dim_sb",
+    "name": "Shelly WZ Dim SB",
+    "implementation": "shelly",
+    "enabled": true,
+    "topic": "bluecat/shelly_wohnzimmer_dim_sb/sensor/state",
+    "pos": [
+        -219.8,
+        -875.9
+    ],
+    "position_configured": true,
+    "availability_topic": "bluecat/shelly_wohnzimmer_dim_sb/sensor/status",
+    "ble_addresses": [
+        "b0:81:84:ef:cd:20"
+    ],
+    "tx_power": -59.0,
+    "n_factor": 3.0,
+    "r_min": 5.0,
+    "r_max": 20.0,
+    "rssi_limit": -110.0,
+    "q_variance": 0.01,
+    "calibration_status": "calibrated",
+    "ble_mac_source": "identity"
+}

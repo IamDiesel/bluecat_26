@@ -1,0 +1,11 @@
+{
+    "bg_image_path": "./../config/raum.png",
+    "bg_offset_x": -381.2245037658251,
+    "bg_offset_y": 8.38460321732407,
+    "bg_scale": 1.3904154374073618,
+    "bg_rotation": 180,
+    "bg_flip_h": true,
+    "bg_flip_v": false,
+    "alpha_heatmap": 0.7,
+    "alpha_bg": 0.8
+}

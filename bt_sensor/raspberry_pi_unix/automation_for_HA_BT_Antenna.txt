@@ -1,0 +1,9 @@
+# VERALTET
+#
+# Diese Home-Assistant-Automation gehört zu einer früheren Proxy-Variante.
+# Für die aktuellen Sensoren ist keine HA-Automation erforderlich:
+# Die Sensorsoftware veröffentlicht selbständig auf
+#   bluecat/<sensor_id>/sensor/state
+#
+# Zielobjekt-MAC, Positionen, BLE-MACs und Kalibrierwerte werden über die
+# zentralen TriLola-MQTT-/Discovery-Entities verwaltet.

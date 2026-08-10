@@ -1,0 +1,8 @@
+{
+    "topic": "bluecat/sensor/state",
+    "pos": [0.0, 0.0],
+    "tx_power": -58.36,
+    "n_factor": 1.8,
+    "r_min": 2.96,
+    "r_max": 1.86
+}

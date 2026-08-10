@@ -1,0 +1,27 @@
+{
+    "sensor_id": "shelly_schlafzimmer",
+    "name": "Shelly Schlafzimmer",
+    "implementation": "shelly",
+    "enabled": true,
+    "topic": "bluecat/shelly_schlafzimmer/sensor/state",
+    "pos": [
+        -86.5,
+        -520.5
+    ],
+    "position_configured": true,
+    "availability_topic": "bluecat/shelly_schlafzimmer/sensor/status",
+    "ble_addresses": [
+        "e4:b0:63:d5:42:50"
+    ],
+    "tx_power": -80.68,
+    "n_factor": 1.891,
+    "r_min": 10.26,
+    "r_max": 5.52,
+    "rssi_limit": -110.0,
+    "q_variance": 0.1,
+    "calibration_status": "calibrated",
+    "ble_mac_source": "identity",
+    "calibration_points": 10,
+    "calibration_rms_db": 1.726,
+    "calibration_r_squared": 0.9172
+}
