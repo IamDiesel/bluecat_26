@@ -56,6 +56,11 @@ class ParticleFilter:
         self.last_update_time = None
         self.last_accuracy_cm = None
         self.effective_sample_size = 0.0
+        # Adaptive AMCL-Injektion (w_slow/w_fast als Log-Mittel der Likelihood)
+        self.alpha_slow = 0.01
+        self.alpha_fast = 0.2
+        self.log_w_slow = None
+        self.log_w_fast = None
 
     def reset(self, initial_position=None):
         """Setzt den Filter zurück und initialisiert die 4D-Partikel."""
@@ -86,6 +91,8 @@ class ParticleFilter:
         self.last_update_time = None
         self.last_accuracy_cm = None
         self.effective_sample_size = float(self.particle_count)
+        self.log_w_slow = None
+        self.log_w_fast = None
 
     def _clip_particles(self):
         """Hält die Positionen innerhalb der erlaubten Raumgrenzen."""
@@ -107,8 +114,10 @@ class ParticleFilter:
         self.particles[:, 1] += self.particles[:, 3] * dt
 
         # 2. Dämpfung der Geschwindigkeit (Abbremsen ohne neuen Schub)
-        self.particles[:, 2] *= self.velocity_damping
-        self.particles[:, 3] *= self.velocity_damping
+        # Dämpfung pro Sekunde (unabhängig von der Update-Rate)
+        damping = self.velocity_damping ** dt
+        self.particles[:, 2] *= damping
+        self.particles[:, 3] *= damping
 
         # 3. Prozessrauschen auf Position und Geschwindigkeit addieren
         pos_noise = self.rng.normal(0.0, self.process_noise_cm * np.sqrt(dt), size=(self.particle_count, 2))
@@ -120,9 +129,10 @@ class ParticleFilter:
         self._clip_particles()
         self.last_update_time = now
 
-    def _systematic_resample(self, anchors, distances, sigmas):
-        """Resampling mit AMCL Homecoming Injection."""
-        keep_count = int(self.particle_count * (1.0 - self.recovery_ratio))
+    def _systematic_resample(self, anchors, distances, sigmas, inject_ratio=None):
+        """Resampling mit (adaptiver) AMCL Homecoming Injection."""
+        ratio = self.recovery_ratio if inject_ratio is None else inject_ratio
+        keep_count = int(self.particle_count * (1.0 - ratio))
         inject_count = self.particle_count - keep_count
 
         # 1. Standard-Resampling für die verbleibenden "guten" Partikel
@@ -137,7 +147,7 @@ class ParticleFilter:
 
         # 2. AMCL Homecoming: Rettungspartikel um aktive Sensoren auswerfen
         injected = np.zeros((inject_count, 4))
-        if len(anchors) > 0:
+        if len(anchors) > 0 and inject_count > 0:
             anchor_indices = self.rng.choice(len(anchors), size=inject_count)
             angles = self.rng.uniform(0, 2 * np.pi, size=inject_count)
             # Distanzen mit Sensorunsicherheit verrauschen
@@ -209,14 +219,25 @@ class ParticleFilter:
         # Robuste Soft-L1-Log-Likelihood
         loss = 2.0 * (np.sqrt(1.0 + normalized_residuals**2) - 1.0)
         log_likelihood = -0.5 * np.sum(loss, axis=1)
-        log_likelihood -= np.max(log_likelihood)
-        likelihood = np.exp(log_likelihood)
-        likelihood_sum = float(np.sum(likelihood))
+        # Mittlere Likelihood (gewichtet mit den bisherigen Gewichten) für AMCL
+        max_ll = float(np.max(log_likelihood))
+        likelihood = np.exp(log_likelihood - max_ll)
+        weighted = self.weights * likelihood
+        weighted_sum = float(np.sum(weighted))
+        if weighted_sum > 0.0 and np.isfinite(weighted_sum):
+            # mittlere Log-Likelihood je Messung (unabhängig von der Anzahl Sensoren)
+            log_avg = (max_ll + np.log(weighted_sum)) / len(anchors)
+            if self.log_w_slow is None:
+                self.log_w_slow = self.log_w_fast = log_avg
+            else:
+                self.log_w_slow += self.alpha_slow * (log_avg - self.log_w_slow)
+                self.log_w_fast += self.alpha_fast * (log_avg - self.log_w_fast)
 
-        if not np.isfinite(likelihood_sum) or likelihood_sum <= 0.0:
+        # Bayes: neue Gewichte = alte Gewichte × Likelihood
+        if not np.isfinite(weighted_sum) or weighted_sum <= 0.0:
             self.weights.fill(1.0 / self.particle_count)
         else:
-            self.weights = likelihood / likelihood_sum
+            self.weights = weighted / weighted_sum
 
         self.effective_sample_size = float(1.0 / np.sum(np.square(self.weights)))
 
@@ -224,11 +245,13 @@ class ParticleFilter:
         # am falschen Ort gestrandet. Wir injizieren 20% neues Chaos.
         if self.effective_sample_size < self.particle_count * 0.1 and prior_position is not None:
             replace_count = int(self.particle_count * 0.2)
-            idx_to_replace = np.random.choice(self.particle_count, replace_count, replace=False)
-            
+            idx_to_replace = self.rng.choice(self.particle_count, replace_count, replace=False)
+
             # 20% der Partikel um den neuen Sensor-Seed (prior_position) verstreuen
-            random_scatter = np.random.normal(0, 150.0, (replace_count, 2))
-            self.particles[idx_to_replace, :2] = prior_position + random_scatter
+            random_scatter = self.rng.normal(0, 150.0, (replace_count, 2))
+            self.particles[idx_to_replace, :2] = np.asarray(prior_position, dtype=float).reshape(1, 2) + random_scatter
+            self.particles[idx_to_replace, 2:] = 0.0
+            self._clip_particles()
             
             # Gewichte für diese injizierten Partikel zurücksetzen
             self.weights[idx_to_replace] = 1.0 / self.particle_count
@@ -240,12 +263,20 @@ class ParticleFilter:
                 self.effective_sample_size = float(1.0 / np.sum(np.square(self.weights)))
         # ------------------------------------------
 
-        if self.effective_sample_size < self.particle_count * 0.35:
-            self._systematic_resample(anchors, distances, sigmas)
-
+        # Schätzung VOR dem Resampling (sonst verzerren ungewichtete
+        # Rettungspartikel den Mittelwert in Richtung der Sensoren).
         self.estimate = np.average(self.particles[:, :2], axis=0, weights=self.weights)
         centered = self.particles[:, :2] - self.estimate
         self.covariance = centered.T @ (centered * self.weights[:, None])
+
+        inject_ratio = 0.0
+        if self.log_w_slow is not None:
+            inject_ratio = max(0.0, 1.0 - float(np.exp(min(self.log_w_fast - self.log_w_slow, 0.0))))
+            inject_ratio = min(inject_ratio, self.recovery_ratio)
+        if self.effective_sample_size < self.particle_count * 0.35 or inject_ratio > 0.02:
+            self._systematic_resample(anchors, distances, sigmas, inject_ratio=inject_ratio)
+            if inject_ratio > 0.02:
+                self.log_w_fast = self.log_w_slow
 
         estimate_residuals = (np.linalg.norm(self.estimate[None, :] - anchors, axis=1) - distances)
         residual_rms = float(np.sqrt(np.mean(np.square(estimate_residuals))))

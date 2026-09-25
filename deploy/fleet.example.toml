@@ -1,0 +1,55 @@
+# Bluecat/TriLola – zentrale Rollout-Konfiguration
+# Kopieren nach deploy/fleet.toml (wird nicht committet – enthält Passwörter).
+# Prüfen:  python deploy/bluecat_deploy.py check
+
+[mqtt]
+host = "192.168.1.10"
+port = 1883
+user = ""
+password = ""
+
+[wifi]                      # nur für die ESP32-Firmware
+ssid = "MeinWLAN"
+password = "MeinWLANPasswort"
+
+[esp32]
+ota_password = "bitte-aendern"   # schützt Firmware-Updates per WLAN
+
+[shelly]
+user = "admin"              # nur falls in der Shelly-Weboberfläche ein Passwort gesetzt ist
+password = ""
+# subnet = "192.168.1.0/24" # für die automatische Suche (Standard: /24 des Brokers)
+
+[tracker]
+node = "pi-wohnzimmer"      # id des Pi, auf dem der Tracker läuft
+target_mac = "aa:bb:cc:dd:ee:ff"   # MAC des Halsbands
+engine = "pf"               # "pf" oder "legacy"
+# origin_lat = 48.0         # GPS des Punkts (0,0); leer = aus alter Installation übernehmen
+# origin_lon = 9.0
+origin_bearing_deg = 0.0
+# Weitere secrets_tri-Werte:
+# settings = { PF_PARTICLES = 1500, RECORD_FILE = "recordings/lola.jsonl" }
+
+# ---- Knoten ---------------------------------------------------------------
+# type = "pi":     host, ssh_user (Standard "pi"), optional ssh_port, tracker = true
+# type = "esp32":  ble_mac (steht im Tracker-Log bzw. in bt_tracker/config/<id>.json)
+# type = "shelly": wifi_mac (Aufkleber/Weboberfläche) oder host; legacy_id optional
+
+[[node]]
+id = "pi-wohnzimmer"
+type = "pi"
+name = "Pi Wohnzimmer"
+host = "192.168.1.20"
+ssh_user = "pi"
+
+[[node]]
+id = "esp-flur"
+type = "esp32"
+name = "ESP32 Flur"
+ble_mac = "aa:bb:cc:dd:ee:01"
+
+[[node]]
+id = "shelly_kueche"
+type = "shelly"
+name = "Shelly Küche"
+wifi_mac = "aa:bb:cc:dd:ee:02"

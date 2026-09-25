@@ -1,0 +1,4 @@
+# Skripte, die unter Linux laufen, immer mit LF (auch bei Windows-Checkout)
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.yaml text eol=lf

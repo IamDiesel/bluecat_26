@@ -1,0 +1,24 @@
+{
+    "topic": "bluecat/shelly_sz_lichtschrank/sensor/state",
+    "pos": [
+        -213.0,
+        -224.1
+    ],
+    "tx_power": -63.68,
+    "n_factor": 3.25,
+    "r_min": 1.77,
+    "r_max": 1.4,
+    "ble_addresses": [
+        "02:8c:bf:cd:c2:12"
+    ],
+    "sensor_id": "shelly_sz_lichtschrank",
+    "name": "Shelly Schlafzimmer Lichtschrank",
+    "implementation": "shelly",
+    "enabled": true,
+    "availability_topic": "bluecat/shelly_sz_lichtschrank/sensor/status",
+    "rssi_limit": -110.0,
+    "q_variance": 0.1,
+    "calibration_status": "uncalibrated",
+    "position_configured": true,
+    "ble_mac_source": "identity"
+}

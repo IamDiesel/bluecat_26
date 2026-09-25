@@ -1,0 +1,38 @@
+{
+  // TriLola als Home-Assistant-App im Devcontainer testen (VS Code → „Reopen in Container“).
+  // Reihenfolge: 1. Home Assistant starten  2. TriLola: bauen und starten
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "1. Home Assistant starten",
+      "type": "shell",
+      "command": "supervisor_run",
+      "group": { "kind": "test", "isDefault": true },
+      "presentation": { "reveal": "always", "panel": "new" },
+      "problemMatcher": []
+    },
+    {
+      "label": "2. TriLola: bauen und starten",
+      "type": "shell",
+      "command": "bash deploy/devcontainer/trilola_app.sh start",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "new" },
+      "problemMatcher": []
+    },
+    {
+      "label": "TriLola: Protokoll",
+      "type": "shell",
+      "command": "bash deploy/devcontainer/trilola_app.sh logs",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "new" },
+      "problemMatcher": []
+    },
+    {
+      "label": "TriLola: stoppen",
+      "type": "shell",
+      "command": "bash deploy/devcontainer/trilola_app.sh stop",
+      "group": "test",
+      "problemMatcher": []
+    }
+  ]
+}

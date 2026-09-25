@@ -1,7 +1,15 @@
 import numpy as np
 
 class RadioGridMap:
-    """Voxel-basiertes Tomographie-Modell zur Kartierung von Funkwiderständen."""
+    """Voxel-basiertes Tomographie-Modell zur Kartierung von Funkwiderständen.
+
+    Nur im Legacy-Modell und nur mit ``RADIO_GRID_ENABLED = True`` aktiv.
+    Bekannte Grenzen (siehe Review): Die Sensor-zu-Sensor-Referenz nutzt die
+    Halsband-Kalibrierung des Senders, Rauschen wird einseitig abgeschnitten
+    (positiver Bias) und das dynamische Update nutzt die eigene
+    Positionsschätzung (Zirkelschluss). Für Wände besser ``floorplan.json``
+    mit dem PF-Modell verwenden.
+    """
 
     def __init__(self, sensor_positions, cell_size_cm=50.0, margin_cm=200.0):
         self.cell_size = float(cell_size_cm)
@@ -118,6 +126,26 @@ class RadioGridMap:
         dists_m = np.linalg.norm(particles[:, None, :] - anchors[None, :, :], axis=2) / 100.0
         
         return mean_db_per_m * dists_m
+
+    def load_heatmap(self, filepath):
+        """Lädt ein zuvor exportiertes Grid, wenn Raster und Grenzen passen."""
+        import json
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            grid = np.asarray(data["grid_data"], dtype=float)
+            same = (
+                grid.shape == self.grid.shape
+                and abs(float(data["cell_size_cm"]) - self.cell_size) < 1e-6
+                and abs(float(data["min_bounds_x"]) - self.min_bounds[0]) < 1e-6
+                and abs(float(data["min_bounds_y"]) - self.min_bounds[1]) < 1e-6
+            )
+            if same:
+                self.grid = np.clip(grid, 0.0, 50.0)
+                return True
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            print(f"Heatmap konnte nicht geladen werden: {error}")
+        return False
 
     def export_heatmap(self, filepath="config/radio_heatmap.json"):
         """Exportiert das Grid und die Raumgrenzen für die Visualisierung."""

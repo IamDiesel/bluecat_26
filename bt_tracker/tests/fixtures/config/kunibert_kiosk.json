@@ -1,0 +1,17 @@
+{
+    "topic": "bluecat/kunibert_kiosk/sensor/state",
+    "pos": [
+        0.0,
+        0.0
+    ],
+    "tx_power": -71.8,
+    "n_factor": 1.01,
+    "r_min": 5.11,
+    "r_max": 0.2,
+    "sensor_id": "kunibert_kiosk",
+    "name": "Kunibert Kiosk",
+    "implementation": "unknown",
+    "enabled": true,
+    "availability_topic": "bluecat/kunibert_kiosk/sensor/status",
+    "ble_addresses": []
+}

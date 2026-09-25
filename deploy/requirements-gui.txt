@@ -1,0 +1,6 @@
+# Rollout-Oberfläche (deploy/bluecat_gui.py) – installiert rollout.bat / rollout.sh automatisch
+paho-mqtt>=2.0
+paramiko>=3.0
+pyserial>=3.5
+tomli>=2.0; python_version < "3.11"
+# PlatformIO (für die ESP32) installiert die Oberfläche bei Bedarf selbst (Wartung → ESP32-Werkzeug)

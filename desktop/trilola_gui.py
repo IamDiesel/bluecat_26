@@ -2,7 +2,7 @@ import os
 import glob
 import json
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, simpledialog
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
@@ -21,6 +21,12 @@ except ImportError:
 
 CONFIG_DIR = "config"
 VIEWER_CONFIG_FILE = os.path.join(CONFIG_DIR, "viewer_config.json")
+# Sensoren, Heatmap und Grundriss liegen beim Tracker (bt_tracker/config).
+_HERE = os.path.dirname(os.path.abspath(__file__))
+TRACKER_CONFIG_DIR = os.path.normpath(os.path.join(_HERE, "..", "bt_tracker", "config"))
+DATA_DIR = TRACKER_CONFIG_DIR if os.path.isdir(TRACKER_CONFIG_DIR) else CONFIG_DIR
+FLOORPLAN_FILE = os.path.join(DATA_DIR, "floorplan.json")
+NON_SENSOR_FILES = {"viewer_config.json", "floorplan.json", "tracker_state.json", "calibration_points.json"}
 
 # --- EIGENE FARBSKALA DEFINIEREN ---
 # Verlauf: Transparent (0 Dämpfung) -> Rot -> Dunkelrot -> Schwarz (Starke Dämpfung)
@@ -53,6 +59,13 @@ class TriLolaViewerApp(tk.Tk):
         self.is_dragging = False
         self.last_mouse_x = None
         self.last_mouse_y = None
+
+        # --- Grundriss (Wände & Räume) ---
+        self.floorplan = self.load_floorplan()
+        self.draw_mode = tk.StringVar(value="aus")
+        self.wall_db = tk.DoubleVar(value=float(self.floorplan.get("default_wall_db", 5.0)))
+        self.pending_points = []
+        self.history = []  # ("wall"|"room", index) für Rückgängig
 
         # --- Matplotlib Objekte ---
         self.fig, self.ax = plt.subplots(figsize=(8, 6))
@@ -122,6 +135,22 @@ class TriLolaViewerApp(tk.Tk):
         self.lbl_info = tk.Label(frame_edit, text="X: 0.0 | Y: 0.0\nScale: 1.0 | Rot: 0°",
                                  justify=tk.LEFT, font=("Consolas", 9), bg="#e8e8e8", padx=5, pady=5)
         self.lbl_info.pack(fill=tk.X, pady=5)
+
+        # --- BLOCK 3b: Grundriss ---
+        frame_fp = tk.LabelFrame(sidebar, text="Grundriss (Wände & Räume)", bg="#f0f0f0", padx=5, pady=5)
+        frame_fp.pack(fill=tk.X, pady=5)
+        for value, label in (("aus", "Aus"), ("wand", "Wand zeichnen (2 Klicks)"), ("raum", "Raum zeichnen (Ecken klicken)")):
+            tk.Radiobutton(frame_fp, text=label, value=value, variable=self.draw_mode, bg="#f0f0f0",
+                           command=self.on_draw_mode_changed).pack(anchor=tk.W)
+        row = tk.Frame(frame_fp, bg="#f0f0f0")
+        row.pack(fill=tk.X, pady=2)
+        tk.Label(row, text="Wanddämpfung dB:", bg="#f0f0f0").pack(side=tk.LEFT)
+        tk.Entry(row, textvariable=self.wall_db, width=6).pack(side=tk.LEFT, padx=4)
+        tk.Button(frame_fp, text="Raum abschließen", command=self.finish_room).pack(fill=tk.X, pady=2)
+        tk.Button(frame_fp, text="Letztes Element löschen", command=self.undo_floorplan).pack(fill=tk.X, pady=2)
+        tk.Button(frame_fp, text="Grundriss speichern", command=self.save_floorplan).pack(fill=tk.X, pady=2)
+        tk.Label(frame_fp, text="Tipp: Türen als Lücken lassen.\nEndpunkte rasten an (15 cm).",
+                 justify=tk.LEFT, fg="#555555", bg="#f0f0f0").pack(anchor=tk.W)
 
         # --- BLOCK 4: Speichern ---
         tk.Button(sidebar, text="💾 Setup speichern", font=("Arial", 10, "bold"),
@@ -277,9 +306,9 @@ class TriLolaViewerApp(tk.Tk):
 
     def load_sensors(self):
         sensors = []
-        for filepath in glob.glob(os.path.join(CONFIG_DIR, "*.json")):
+        for filepath in glob.glob(os.path.join(DATA_DIR, "*.json")):
             filename = os.path.basename(filepath)
-            if filename.startswith("radio_") or filename == "viewer_config.json":
+            if filename.startswith("radio_") or filename in NON_SENSOR_FILES or filename.startswith("."):
                 continue
             try:
                 with open(filepath, "r", encoding="utf-8") as f:
@@ -299,7 +328,7 @@ class TriLolaViewerApp(tk.Tk):
         self.img_plot = None
         self.heatmap_plot = None
         has_heatmap = False
-        heatmap_file = os.path.join(CONFIG_DIR, "radio_heatmap.json")
+        heatmap_file = os.path.join(DATA_DIR, "radio_heatmap.json")
 
         # 1. BILD
         if self.bg_img_data is not None:
@@ -329,6 +358,9 @@ class TriLolaViewerApp(tk.Tk):
                 has_heatmap = True
             except Exception:
                 pass
+
+        # 2b. GRUNDRISS
+        self.draw_floorplan()
 
         # 3. SENSOREN
         sensors = self.load_sensors()
@@ -394,6 +426,9 @@ class TriLolaViewerApp(tk.Tk):
         self.update_image_extent()
 
     def on_press(self, event):
+        if event.inaxes == self.ax and self.draw_mode.get() != "aus" and not self.toolbar.mode:
+            self.handle_floorplan_click(event)
+            return
         if not self.is_edit_mode.get() or event.inaxes != self.ax:
             return
         if event.button == 1:
@@ -413,6 +448,117 @@ class TriLolaViewerApp(tk.Tk):
         self.bg_offset_y += dy
         self.last_mouse_x, self.last_mouse_y = event.xdata, event.ydata
         self.update_image_extent()
+
+    # ==========================================
+    #        GRUNDRISS-EDITOR
+    # ==========================================
+    def load_floorplan(self):
+        try:
+            with open(FLOORPLAN_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            data.setdefault("walls", [])
+            data.setdefault("rooms", [])
+            return data
+        except (OSError, json.JSONDecodeError):
+            return {"default_wall_db": 5.0, "walls": [], "rooms": []}
+
+    def save_floorplan(self):
+        try:
+            self.floorplan["default_wall_db"] = float(self.wall_db.get())
+            os.makedirs(os.path.dirname(FLOORPLAN_FILE), exist_ok=True)
+            tmp = FLOORPLAN_FILE + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(self.floorplan, f, indent=2, ensure_ascii=False)
+            os.replace(tmp, FLOORPLAN_FILE)
+            messagebox.showinfo("Gespeichert", f"Grundriss gespeichert:\n{FLOORPLAN_FILE}\n\n"
+                                "Tracker neu starten, damit er übernommen wird.")
+        except Exception as e:
+            messagebox.showerror("Fehler", f"Speichern fehlgeschlagen:\n{e}")
+
+    def on_draw_mode_changed(self):
+        self.pending_points = []
+        if self.draw_mode.get() != "aus":
+            self.is_edit_mode.set(False)
+            if self.toolbar.mode:
+                self.toolbar.pan() if self.toolbar.mode == "pan/zoom" else self.toolbar.zoom()
+        self.reload_data_and_draw()
+
+    def _snap(self, x, y):
+        best, best_d = (x, y), 15.0
+        for wall in self.floorplan["walls"]:
+            for px, py in (wall["a"], wall["b"]):
+                d = float(np.hypot(px - x, py - y))
+                if d < best_d:
+                    best, best_d = (px, py), d
+        for room in self.floorplan["rooms"]:
+            for px, py in room["polygon"]:
+                d = float(np.hypot(px - x, py - y))
+                if d < best_d:
+                    best, best_d = (px, py), d
+        return round(float(best[0]), 1), round(float(best[1]), 1)
+
+    def handle_floorplan_click(self, event):
+        x, y = self._snap(event.xdata, event.ydata)
+        mode = self.draw_mode.get()
+        if mode == "wand":
+            self.pending_points.append([x, y])
+            if len(self.pending_points) == 2:
+                a, b = self.pending_points
+                if a != b:
+                    try:
+                        db = float(self.wall_db.get())
+                    except (tk.TclError, ValueError):
+                        db = 5.0
+                    self.floorplan["walls"].append({"a": a, "b": b, "attenuation_db": db, "blocking": True})
+                    self.history.append(("walls", len(self.floorplan["walls"]) - 1))
+                self.pending_points = []
+        elif mode == "raum":
+            if event.button == 3:
+                self.finish_room()
+                return
+            self.pending_points.append([x, y])
+        self.reload_data_and_draw()
+
+    def finish_room(self):
+        if self.draw_mode.get() != "raum" or len(self.pending_points) < 3:
+            messagebox.showinfo("Raum", "Mindestens 3 Ecken im Modus „Raum zeichnen“ klicken.")
+            return
+        name = simpledialog.askstring("Raumname", "Name des Raums:", parent=self)
+        if name:
+            self.floorplan["rooms"].append({"name": name.strip(), "polygon": self.pending_points})
+            self.history.append(("rooms", len(self.floorplan["rooms"]) - 1))
+        self.pending_points = []
+        self.reload_data_and_draw()
+
+    def undo_floorplan(self):
+        if self.pending_points:
+            self.pending_points.pop()
+        elif self.history:
+            kind, index = self.history.pop()
+            if index < len(self.floorplan[kind]):
+                self.floorplan[kind].pop(index)
+        elif self.floorplan["walls"]:
+            self.floorplan["walls"].pop()
+        self.reload_data_and_draw()
+
+    def draw_floorplan(self):
+        scale = float(self.floorplan.get("wall_scale", 1.0) or 1.0)
+        for room in self.floorplan.get("rooms", []):
+            poly = np.asarray(room["polygon"], dtype=float)
+            if len(poly) < 3:
+                continue
+            self.ax.fill(poly[:, 0], poly[:, 1], alpha=0.12, color="tab:blue", zorder=1.5)
+            cx, cy = poly.mean(axis=0)
+            self.ax.text(cx, cy, room.get("name", ""), ha="center", va="center", color="tab:blue",
+                         fontsize=10, alpha=0.8, zorder=1.6)
+        for wall in self.floorplan.get("walls", []):
+            (x1, y1), (x2, y2) = wall["a"], wall["b"]
+            db = float(wall.get("attenuation_db", self.floorplan.get("default_wall_db", 5.0))) * scale
+            self.ax.plot([x1, x2], [y1, y2], color="black", linewidth=1.0 + db / 3.0, zorder=1.7,
+                         solid_capstyle="butt")
+        if self.pending_points:
+            pts = np.asarray(self.pending_points, dtype=float)
+            self.ax.plot(pts[:, 0], pts[:, 1], "o--", color="tab:orange", zorder=4)
 
 
 if __name__ == "__main__":
