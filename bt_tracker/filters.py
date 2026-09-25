@@ -9,12 +9,20 @@ class TrackingFilter:
             r_min=5.0,
             r_max=50.0,
             rssi_limit=-110.0,
-            window_size=7,
+            window_size=3,
             eps=4.0,
             min_samples=3,
             q_variance=0.1,
             innovation_gate_sigma=4.0,
+            prefilter="median",
     ):
+        """1D-Kalman auf RSSI mit robustem Vorfilter.
+
+        ``prefilter="median"`` (Standard): Median der letzten ``window_size``
+        Werte – entfernt Einzel-Ausreißer bei nur ~1 Sample Verzögerung.
+        ``prefilter="mad_mean"``: bisheriges Verhalten (Mittel der MAD-Inlier
+        im Fenster, bei window_size=7 ≈ 3 Samples Gruppenlaufzeit).
+        """
         self.tx_power = float(tx_power)
         self.r_min = max(float(r_min), 0.0)
         self.r_max = max(float(r_max), 0.0)
@@ -27,6 +35,7 @@ class TrackingFilter:
         self.far_variance = max(max(self.r_min, self.r_max), self.variance_floor)
 
         self.window_size = max(int(window_size), 3)
+        self.prefilter = str(prefilter)
         self.eps = max(float(eps), 0.1)
         self.min_samples = max(int(min_samples), 2)
         self.history = []
@@ -57,6 +66,8 @@ class TrackingFilter:
             return float(current_rssi)
 
         data = np.asarray(self.history, dtype=float)
+        if self.prefilter == "median":
+            return float(np.median(data))
         median = float(np.median(data))
         mad = float(np.median(np.abs(data - median)))
         robust_sigma = max(1.4826 * mad, 0.5)

@@ -1,0 +1,29 @@
+# TriLola als Home-Assistant-App (früher „Add-on“).
+# Installation: deploy/bluecat_deploy.py ha-addon (bzw. Oberfläche → Wartung → Home Assistant)
+name: TriLola
+description: Katzen-Tracker – Geräte-Rollout, Karte, Kalibrierung und Feintuning
+version: "2.4.0"
+slug: trilola
+arch:
+  - aarch64
+  - amd64
+init: false
+startup: application
+boot: auto
+# Zeit zum sauberen Beenden (Tracker speichert Mesh-Baselines)
+timeout: 30
+ingress: true
+ingress_port: 8765
+panel_icon: mdi:cat
+panel_title: TriLola
+# Host-Netz: ESP32-Updates per WLAN (der ESP verbindet sich zurück) und die Shelly-Suche brauchen es
+host_network: true
+# ESP32 per USB flashen, wenn er an diesem Rechner steckt
+uart: true
+map:
+  - addon_config:rw
+# Werkzeuge und Kachel-Cache nicht mit sichern (groß, jederzeit neu ladbar)
+backup_exclude:
+  - "*platformio/*"
+  - "*pio_workspace/*"
+  - "*tile_cache/*"

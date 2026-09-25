@@ -1,3 +1,60 @@
+# ---------------------------------------------------------------------------
+# Zugangsdaten – nie ins Git
+# ---------------------------------------------------------------------------
 secrets_tri.py
 secrets_blue.py
 secrets_ble.h
+deploy/fleet.toml
+deploy/fleet.toml.*
+!deploy/fleet.example.toml
+deploy/.gui_token
+deploy/.ha_known_hosts
+# Schlüssel und Umgebungsdateien, falls einmal welche im Repo-Ordner landen
+.env
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+
+# ESP32-Build: firmware.bin/.elf enthalten WLAN-, MQTT- und OTA-Passwort im Klartext
+.pio/
+*.bin
+*.elf
+
+# ---------------------------------------------------------------------------
+# Persönliche Daten deiner Installation (MAC-Adressen, Grundriss, Standort,
+# Kalibrierung, Messungen). Tests nutzen bt_tracker/tests/fixtures/.
+# ---------------------------------------------------------------------------
+bt_tracker/config/
+/config/
+bt_tracker/recordings/
+recordings/
+deploy/plan/
+deploy/.cache.json
+deploy/.tracker_move/
+*.jsonl
+*.log
+# Mitschnitte von Geräten (enthalten Halsband-MAC, IPs, Pfade)
+error.txt
+journal*.txt
+
+# ---------------------------------------------------------------------------
+# Caches und Umgebungen
+# ---------------------------------------------------------------------------
+__pycache__/
+*.pyc
+.pytest_cache/
+deploy/.venv/
+.venv/
+deploy/.tile_cache/
+.vscode/*
+!.vscode/tasks.json
+# Devcontainer-Test: aus dem Repo erzeugter Programmcode der App
+deploy/ha_addon/app/
+.idea/
+*.tmp
+
+# Betriebssystem
+.DS_Store
+Thumbs.db
+desktop.ini

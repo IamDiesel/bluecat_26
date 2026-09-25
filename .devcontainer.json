@@ -1,0 +1,36 @@
+{
+  "name": "TriLola – Home-Assistant-App testen",
+  "image": "ghcr.io/home-assistant/devcontainer:6-apps",
+  "overrideCommand": false,
+  "remoteUser": "vscode",
+  "forwardPorts": [8123, 4357],
+  "portsAttributes": {
+    "8123": { "label": "Home Assistant", "onAutoForward": "notify" },
+    "4357": { "label": "Supervisor-Beobachter", "onAutoForward": "silent" }
+  },
+  "postCreateCommand": "command -v python3 >/dev/null || (sudo apt-get update && sudo apt-get install -y --no-install-recommends python3)",
+  "postStartCommand": "bash devcontainer_bootstrap",
+  "runArgs": ["-e", "GIT_EDITOR=code --wait", "--privileged"],
+  "workspaceFolder": "/mnt/supervisor/apps/local/${localWorkspaceFolderBasename}",
+  "workspaceMount": "source=${localWorkspaceFolder},target=${containerWorkspaceFolder},type=bind,consistency=cached",
+  "containerEnv": {
+    "WORKSPACE_DIRECTORY": "${containerWorkspaceFolder}",
+    "SUPERVISOR_CHANNEL": "stable"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": ["timonwong.shellcheck"],
+      "settings": {
+        "terminal.integrated.profiles.linux": { "zsh": { "path": "/usr/bin/zsh" } },
+        "terminal.integrated.defaultProfile.linux": "zsh",
+        "files.trimTrailingWhitespace": true
+      }
+    }
+  },
+  "mounts": [
+    "type=volume,source=trilola-ha-docker,target=/var/lib/docker",
+    "type=volume,source=trilola-ha-containerd,target=/var/lib/containerd",
+    "type=volume,source=trilola-ha-supervisor,target=/mnt/supervisor",
+    "type=tmpfs,target=/tmp"
+  ]
+}

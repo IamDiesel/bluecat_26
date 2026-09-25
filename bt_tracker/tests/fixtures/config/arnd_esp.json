@@ -1,0 +1,27 @@
+{
+    "topic": "bluecat/arnd/sensor/state",
+    "pos": [
+        -224.4,
+        0.0
+    ],
+    "tx_power": -68.97,
+    "n_factor": 2.352,
+    "r_min": 2.84,
+    "r_max": 10.06,
+    "sensor_id": "arnd_esp",
+    "name": "Arnd Esp",
+    "implementation": "esp32",
+    "enabled": true,
+    "availability_topic": "bluecat/arnd_esp/sensor/status",
+    "ble_addresses": [
+        "02:f4:2d:dd:29:08"
+    ],
+    "rssi_limit": -110.0,
+    "q_variance": 0.1,
+    "calibration_status": "calibrated",
+    "position_configured": true,
+    "ble_mac_source": "identity",
+    "calibration_points": 10,
+    "calibration_rms_db": 2.455,
+    "calibration_r_squared": 0.7893
+}
