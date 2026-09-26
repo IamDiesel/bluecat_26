@@ -319,7 +319,7 @@ MQTT-Broker ist erreichbar. Es gibt fünf Modi:
   Standard: Shelly 1,05 m, sonst 1,00 m). Steht ein Gerät auf einem anderen Stockwerk, trägst
   du dort die Höhe seines Fußbodens über Grund ein; die Wohnung selbst bekommt unter
   *Stockwerk* die Höhe ihres Fußbodens über Grund. Der Tracker rechnet mit dem echten,
-  schrägen Abstand $\sqrt{r^2 + \Delta z^2}$ zwischen Antenne und Halsband (`TAG_HEIGHT_CM`).
+  schrägen Abstand $`\sqrt{r^2 + \Delta z^2}`$ zwischen Antenne und Halsband (`TAG_HEIGHT_CM`).
 * *Speichern* schickt Grundriss, Positionen und Höhen an den Tracker; er übernimmt sie sofort.
 * Option *Statische Funkkarte*: zeigt, wo das Mesh Dämpfung sieht – hilft beim Wändezeichnen.
 
@@ -339,7 +339,7 @@ nicht im Git) und geht nicht an den Tracker.
   (Stichprobe der Partikel – zeigt, wie sicher der Tracker ist).
 * **Geräte**: grün = sieht Lola gerade (mit RSSI), grau = sieht sie nicht, rot = offline.
 * **Funkkarte** (umschaltbar), beide in dB je Meter Funkweg, per Radio Tomographic
-  Imaging aus den Sensor-zu-Sensor-Strecken (regularisierte Kleinste Quadrate, $x \ge 0$):
+  Imaging aus den Sensor-zu-Sensor-Strecken (regularisierte Kleinste Quadrate, $`x \ge 0`$):
   * *Wände & Hindernisse* (statisch): gelernte Normalwerte der Strecken gegenüber freier
     Ausbreitung. Zeigt dauerhaft dämpfende Dinge – Wände, Schränke, Kühlschrank. Mit
     gezeichneten Wänden werden deren Dämpfungen mitgeschätzt; ohne Grundriss ist die
@@ -385,12 +385,14 @@ einen Vorschlag; am Tracker ändert sich erst etwas mit *Übernehmen*.
 Die Sensoren hören sich an bekannten Positionen gegenseitig. Aus den gelernten
 Normalwerten aller Strecken schätzt der Tracker robust (Huber, mit Vorwissen):
 
-$$B_{r\leftarrow t} = A_t + G_r - 10\,n\,\log_{10} d_{rt} - \textstyle\sum_w c_w\,L_w + \varepsilon$$
+```math
+B_{r\leftarrow t} = A_t + G_r - 10\,n\,\log_{10} d_{rt} - \textstyle\sum_w c_w\,L_w + \varepsilon
+```
 
-* $G_r$ = relative Empfangsstärke je Sensor → Vorschlag für `tx_power`. Das Gesamtniveau
+* $`G_r`$ = relative Empfangsstärke je Sensor → Vorschlag für `tx_power`. Das Gesamtniveau
   kann das Mesh nicht sehen (Halsband ≠ Sensor-Sender); es wird an bereits kalibrierten
   Sensoren ausgerichtet, sonst bleibt der Mittelwert wie bisher.
-* $n$ = Pfadverlust, $L_w$ = Dämpfung jeder gezeichneten Wand (nur Wände, die von
+* $`n`$ = Pfadverlust, $`L_w`$ = Dämpfung jeder gezeichneten Wand (nur Wände, die von
   mindestens zwei Strecken gekreuzt werden).
 * Genauer als geraten, aber gröber als Plan B – mit dem Halsband kalibrierte Sensoren sind
   deshalb standardmäßig abgewählt.
@@ -411,11 +413,13 @@ python calibrate_sensor.py      # Modus 1: Raumkalibrierung, Modus 2: nur neu fi
 
 Gefittet wird ein gemeinsames Modell über alle Punkte und Sensoren:
 
-$$RSSI_{ij} = P_{0,i} - 10\,n\,\log_{10} d_{ij} - s\cdot\text{Wände}_{ij} + \varepsilon$$
+```math
+RSSI_{ij} = P_{0,i} - 10\,n\,\log_{10} d_{ij} - s\cdot\text{Wände}_{ij} + \varepsilon
+```
 
-* $d_{ij}$ ist der schräge Abstand zwischen Messpunkt (auf Halsbandhöhe) und Sensorantenne.
+* $`d_{ij}`$ ist der schräge Abstand zwischen Messpunkt (auf Halsbandhöhe) und Sensorantenne.
   Nach dem Eintragen der Höhen einmal neu *Auswerten* – die Rohdaten bleiben erhalten.
-* `tx_power` = $P_{0,i}$ je Sensor, `n_factor` gemeinsam, `sigma_db` = Streuung der
+* `tx_power` = $`P_{0,i}`$ je Sensor, `n_factor` gemeinsam, `sigma_db` = Streuung der
   Residuen (Shadowing), `r_min`/`r_max` = Streuung einzelner Werte nah/fern,
   `wall_scale` = Korrektur der Grundriss-Dämpfungen.
 * Rohdaten liegen in `config/calibration_points.json` (Oberfläche und Konsole teilen sie).
@@ -432,16 +436,18 @@ Kurzfassung – ausführlich mit allen Formeln und Parametern in [Modell & Param
 
 Jede Sensor-Nachricht wird einzeln und in Zeitreihenfolge eingearbeitet:
 
-$$z_i = P_{0,i} - 10\,n_i\log_{10}\sqrt{\lVert x - s_i\rVert^2 + (h_i - h_\text{Halsband})^2} - W_i(x) + b_i + \varepsilon,\quad
-\varepsilon \sim t_\nu(0, \sigma_i),\quad \sigma_i^2 = \sigma_{\text{shadow}}^2 + 1{,}57\,\sigma_{\text{fading}}^2/k$$
+```math
+z_i = P_{0,i} - 10\,n_i\log_{10}\sqrt{\lVert x - s_i\rVert^2 + (h_i - h_\text{Halsband})^2} - W_i(x) + b_i + \varepsilon,\quad
+\varepsilon \sim t_\nu(0, \sigma_i),\quad \sigma_i^2 = \sigma_{\text{shadow}}^2 + 1{,}57\,\sigma_{\text{fading}}^2/k
+```
 
-* Partikelzustand $[x, y, v_x, v_y, \text{Modus}]$, Modus Ruhe/Bewegung (Markov-Wechsel),
+* Partikelzustand $`[x, y, v_x, v_y, \text{Modus}]`$, Modus Ruhe/Bewegung (Markov-Wechsel),
   Geschwindigkeit als Ornstein-Uhlenbeck-Prozess, Wände sperren Bewegungen.
-* „Nicht gesehen“: $P(\text{miss}\mid x) = p_0 + (1-p_0)\,\Phi\big((\text{floor}-\mu_i(x))/\sigma\big)$.
+* „Nicht gesehen“: $`P(\text{miss}\mid x) = p_0 + (1-p_0)\,\Phi\big((\text{floor}-\mu_i(x))/\sigma\big)`$.
 * Wiederholte Messungen desselben Sensors in Ruhe sind korreliert (Shadowing) und werden
-  anteilig gewichtet ($\beta = \min(1, \Delta t / 6\,\text{s})$).
-* Adaptive Rettungspartikel (AMCL, $w_\text{slow}/w_\text{fast}$) um den meldenden Sensor.
-* $b_i$ = Empfängerdrift aus dem Mesh (siehe unten).
+  anteilig gewichtet ($`\beta = \min(1, \Delta t / 6\,\text{s})`$).
+* Adaptive Rettungspartikel (AMCL, $`w_\text{slow}/w_\text{fast}`$) um den meldenden Sensor.
+* $`b_i`$ = Empfängerdrift aus dem Mesh (siehe unten).
 
 ### `legacy` – bisheriges Modell, korrigiert
 
@@ -452,8 +458,8 @@ standardmäßig aus (`RADIO_GRID_ENABLED`).
 ### Mesh: Drift und Funkqualität
 
 Abweichungen der Sensor-zu-Sensor-Links von ihrer Baseline werden in Sender- und
-Empfängeranteil zerlegt ($R_{t\to r} - B_{t\to r} = a_t + b_r$, robuste Ridge-Regression,
-Gleichtakt entfernt). Für das Halsband zählt nur $b_r$. Weichen viele Sensoren zugleich
+Empfängeranteil zerlegt ($`R_{t\to r} - B_{t\to r} = a_t + b_r`$, robuste Ridge-Regression,
+Gleichtakt entfernt). Für das Halsband zählt nur $`b_r`$. Weichen viele Sensoren zugleich
 stark ab, gilt die Baseline als verdächtig (`baseline_suspect`) und es wird nicht korrigiert.
 
 ---
