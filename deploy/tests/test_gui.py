@@ -465,7 +465,10 @@ def test_calibration_plan_store(tmp_path, monkeypatch):
     assert gui.load_calibration_plan() == []
     saved = gui.save_calibration_plan([{"id": "k1", "x": 10.04, "y": "-5", "label": "Flur"}])
     assert saved == [{"id": "k1", "x": 10.0, "y": -5.0, "label": "Flur"}] and gui.load_calibration_plan() == saved
+    with_z = gui.save_calibration_plan([{"id": "k2", "x": 1, "y": 2, "z": "86", "label": ""}, {"id": "k3", "x": 0, "y": 0, "z": None}])
+    assert with_z[0]["z"] == 86.0 and "z" not in with_z[1]
     for bad in ([{"id": "../x", "x": 0, "y": 0}], [{"id": "k", "x": "inf", "y": 0}], [{"id": "k"}], "x",
+                [{"id": "k", "x": 0, "y": 0, "z": 900}], [{"id": "k", "x": 0, "y": 0, "z": "hoch"}],
                 [{"id": f"k{i}", "x": 0, "y": 0} for i in range(61)]):
         with pytest.raises(bd.DeployError):
             gui.save_calibration_plan(bad)
@@ -477,6 +480,10 @@ def test_calibration_command(tmp_path):
     topic, payload, retain = app.live.client.published[-1]
     assert topic == "bluecat/config/calibration/set" and not retain
     assert json.loads(payload) == {"cmd": "start", "x": 12.5, "y": -3.0, "duration_s": 60.0, "id": "k1"}
+    app.calibration_command({"cmd": "start", "x": 1, "y": 2, "z": "86", "id": "k2"})
+    assert json.loads(app.live.client.published[-1][1])["z"] == 86.0
+    app.calibration_command({"cmd": "start", "x": 1, "y": 2, "z": None, "id": "k3"})
+    assert "z" not in json.loads(app.live.client.published[-1][1])
     app.calibration_command({"cmd": "apply_autocal", "sensors": ["ron"], "n": True, "walls": False})
     assert json.loads(app.live.client.published[-1][1])["sensors"] == ["ron"]
     for bad in ({"cmd": "rm -rf"}, {"cmd": "start", "x": "nan", "y": 0}):
@@ -558,3 +565,75 @@ def test_live_state_reads_tracker_version_and_tuning():
     snap = live.plan_snapshot()
     assert snap["tracker"]["version"] == "2.3.0" and snap["plan"]["tuning"]["engine"] == "pf"
     assert snap["positions"]["ron"]["height_cm"] == 150
+
+
+def _run_gui_js(snippet, arg):
+    """Führt die reinen CSV-Funktionen aus index.html mit Node aus."""
+    import shutil
+    import subprocess
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node nicht installiert")
+    html = open(os.path.join(os.path.dirname(HERE), "gui", "index.html"), encoding="utf-8").read()
+    start = html.index("  const CSV_ELEV_KEYS")
+    end = html.index("  // ---- Ende CSV")
+    js = html[start:end] + "\nconst ARG = JSON.parse(process.argv[1]);\n" + snippet
+    return json.loads(subprocess.run([node, "-e", js, json.dumps(arg)], capture_output=True, text=True, check=True).stdout)
+
+
+SENSORS = [{"id": "ron", "name": "Ron Raspberry Pi"}, {"id": "kunibert", "name": "Kunibert"},
+           {"id": "arnd_esp", "name": "Arnd ESP32"}, {"id": "tom_esp", "name": "Tom ESP32"},
+           {"id": "shelly_schlafzimmer", "name": "Shelly Schlafzimmer"},
+           {"id": "shelly_sz_lichtschrank", "name": "Shelly Schlafzimmer Lichtschrank"},
+           {"id": "shelly_wohnzimmer", "name": "Shelly Wohnzimmer"},
+           {"id": "shelly_wohnzimmer_dim_sb", "name": "Shelly WZ Dim SB"}]
+
+SH3D_CSV = "\r\n".join([
+    "Name\tBreite\tTiefe\tHöhe\tX\tY\tHöhe über Boden\tSichtbarkeit",
+    "Billy Regal\t80\t28\t202\t-354\t1.003,4\t0\ttrue",
+    "Arnd\t6\t3,5\t71,1\t-224,4\t5,7\t220\ttrue",
+    "Shelly Dimmer Snowboard\t8,5\t5,5\t71,1\t-219,8\t875,9\t220\ttrue",
+    "Shelly Schlafzimmer Lichtschrnak\t3,4\t2,4\t71,1\t-213\t224,1\t120\ttrue",
+    "Calibration_point\t8,5\t5,5\t71,1\t-326,7\t1.025\t86\ttrue",
+    "Shelly Schlaf Schalter\t8,5\t5,5\t71,1\t-86,5\t520,5\t86\ttrue",
+    "Shelly Wohnzimmer Licht\t3,4\t2,4\t71,1\t-71,3\t626,1\t86\ttrue",
+    "Tom\t8,5\t5,5\t71,1\t-4,7\t829,5\t86\ttrue",
+    "Kunibert\t26\t17\t71,1\t-0,9\t15,1\t86\ttrue",
+    "Ron\t8,5\t5,5\t71,1\t77,1\t627,7\t86\ttrue",
+    "Holztür\t106\t12,1\t209,6\t207,5\t433,9\t0\ttrue", ""])
+
+
+def test_sweethome3d_csv_import():
+    rows = _run_gui_js("const p = parsePositionsCsv(ARG.text);"
+                       "console.log(JSON.stringify({p, rows: csvImportRows(p, ARG.sensors, 'kunibert')}));",
+                       {"text": "\ufeff" + SH3D_CSV, "sensors": SENSORS})
+    assert rows["p"]["format"] == "sh3d" and rows["p"]["rows"][0]["y"] == 1003.4   # Tausenderpunkt
+    got = {r["src"]: r for r in rows["rows"]}
+    expect = {"Arnd": "arnd_esp", "Shelly Dimmer Snowboard": "shelly_wohnzimmer_dim_sb", "Tom": "tom_esp",
+              "Shelly Schlafzimmer Lichtschrnak": "shelly_sz_lichtschrank", "Kunibert": "kunibert", "Ron": "ron",
+              "Shelly Schlaf Schalter": "shelly_schlafzimmer", "Shelly Wohnzimmer Licht": "shelly_wohnzimmer",
+              "Calibration_point": "cal", "Billy Regal": "", "Holztür": ""}
+    assert {k: got[k]["target"] for k in expect} == expect
+    # relativ zu Kunibert (−0,9 | 15,1), y umgedreht, Höhe über Boden in m
+    assert (got["Tom"]["dx"], got["Tom"]["dy"], got["Tom"]["h"]) == (-0.04, -8.14, 0.86)
+    assert (got["Arnd"]["dx"], got["Arnd"]["dy"], got["Arnd"]["h"]) == (-2.23, 0.09, 2.2)
+    assert (got["Calibration_point"]["dx"], got["Calibration_point"]["dy"]) == (-3.26, -10.1)
+    assert (got["Kunibert"]["dx"], got["Kunibert"]["dy"]) == (0, 0)
+
+
+def test_positions_csv_roundtrip_and_errors():
+    out = _run_gui_js(
+        "const csv = positionsCsv(ARG.rows); const back = csvImportRows(parsePositionsCsv(csv), ARG.sensors, 'kunibert');"
+        "const noRef = csvImportRows(parsePositionsCsv(ARG.sh3d), ARG.sensors, 'gibtsnicht');"
+        "console.log(JSON.stringify({csv, back, noRef, bad: parsePositionsCsv('A;B\\n1;2'), empty: parsePositionsCsv('')}));",
+        {"rows": [{"kind": "sensor", "id": "tom_esp", "name": "Tom; ESP", "dx": -0.04, "dy": -8.14, "h": 0.86},
+                  {"kind": "sensor", "id": "ron", "name": "Ron", "dx": 0.78, "dy": -6.13, "h": None},
+                  {"kind": "cal", "id": "k1", "name": "Sofa \"groß\"", "dx": 1.5, "dy": -2, "h": 0.25}],
+         "sensors": SENSORS, "sh3d": SH3D_CSV})
+    assert out["csv"].startswith("\ufeffTyp;ID;Name;rechts_m;oben_m;hoehe_ueber_boden_m\r\n")
+    assert 'Gerät;tom_esp;"Tom; ESP";-0,04;-8,14;0,86' in out["csv"]
+    assert [(r["target"], r["dx"], r["dy"], r["h"]) for r in out["back"]] == [
+        ("tom_esp", -0.04, -8.14, 0.86), ("ron", 0.78, -6.13, None), ("cal", 1.5, -2, 0.25)]
+    assert out["back"][2]["calId"] == "k1" and out["back"][2]["label"] == 'Sofa "groß"'
+    assert all(r["dx"] is None for r in out["noRef"])          # ohne Referenz keine Umrechnung
+    assert "error" in out["bad"] and "error" in out["empty"]

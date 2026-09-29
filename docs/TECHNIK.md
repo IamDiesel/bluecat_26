@@ -234,7 +234,7 @@ und im Livemodus beobachten.
 
 **Anwesenheit** (ab Tracker 2.4.0): Lola gilt als „außer Reichweite“ (Karte, Raum, HA-`not_home`),
 sobald *„Weg“ melden nach* Sekunden lang kein Sensor sie mit mindestens *Mindestsignal für „zu Hause“*
-gesehen hat. Standard −100 dBm / 30 s = jede Sichtung zählt (bisheriges Verhalten). Hält die Anzeige
+gesehen hat. Standard −100 dBm / 30 s: nur extrem schwache Sichtungen zählen nicht (−120 dBm = jede Sichtung). Hält die Anzeige
 zu lange, weil ein Sensor sie z. B. draußen vor dem Fenster noch schwach hört: Mindestsignal auf etwa
 −90 bis −85 dBm setzen. Die Schätzung im Modell selbst bleibt davon unberührt.
 

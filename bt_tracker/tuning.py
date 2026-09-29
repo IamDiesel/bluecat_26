@@ -24,7 +24,8 @@ TUNING_FILE = "tuning.json"
 SCHEMA = [
     # --- Bewegung ---------------------------------------------------------------
     ("PF_MOVE_SPEED_CM_S", "Bewegung", "Typische Laufgeschwindigkeit", "cm/s", 20, 300, 5,
-     "Wie schnell Lola beim Laufen im Mittel ist. Höher = folgt schnellen Wechseln besser, springt aber leichter.",
+     "Streuung der Laufgeschwindigkeit je Richtung – im Mittel ist Lola im Modell etwa 1,25-mal so schnell. "
+     "Höher = folgt schnellen Wechseln besser, springt aber leichter. Sinnvoll deutlich unter der Höchstgeschwindigkeit.",
      "pf"),
     ("PF_MOVE_TAU_SEC", "Bewegung", "Richtungsbeständigkeit", "s", 0.5, 10, 0.5,
      "Wie lange eine Laufrichtung beibehalten wird. Höher = glattere Bahnen, träger bei Richtungswechseln.", "pf"),
@@ -38,7 +39,7 @@ SCHEMA = [
     ("PF_MEAN_MOVE_SEC", "Bewegung", "Mittlere Laufdauer (Modell)", "s", 2, 120, 1,
      "Wie lange das Modell im Mittel Bewegung annimmt.", "pf"),
     ("MAX_POSITION_SPEED_CM_S", "Bewegung", "Höchstgeschwindigkeit", "cm/s", 100, 800, 10,
-     "Schneller kann Lola im Modell nicht sein.", "pf"),
+     "Obergrenze der Laufgeschwindigkeit im Modell (dazu kommt nur noch die zufällige Unruhe).", "pf"),
     # --- Messmodell ------------------------------------------------------------------
     ("TAG_HEIGHT_CM", "Messmodell", "Halsbandhöhe über dem Fußboden", "cm", 0, 200, 1,
      "Stehende Katze ca. 25 cm, liegend ca. 10 cm. Zusammen mit den Sensorhöhen ergibt sich der echte Funkabstand.",
@@ -46,20 +47,23 @@ SCHEMA = [
     ("PF_STUDENT_NU", "Messmodell", "Ausreißer-Toleranz", "ν", 1, 30, 0.5,
      "Klein = einzelne verrückte Messwerte schaden kaum (robust). Groß = jeder Wert zählt voll (Normalverteilung).",
      "pf"),
-    ("PF_SAME_SENSOR_CORRELATION_SEC", "Messmodell", "Gedächtnis je Sensor", "s", 0, 30, 0.5,
-     "Schnell aufeinanderfolgende Werte desselben Sensors zählen anteilig. Höher = ein einzelner Sensor dominiert weniger.",
+    ("PF_SAME_SENSOR_CORRELATION_SEC", "Messmodell", "Gedächtnis je Sensor", "s", 0, 10, 0.5,
+     "Schnell aufeinanderfolgende Werte desselben Sensors zählen anteilig (mindestens zu 20 %). "
+     "Höher = ein einzelner Sensor dominiert weniger. 0 = jeder Wert zählt voll.",
      "pf"),
-    ("PF_MISS_BASE_PROB", "Messmodell", "„Nicht gesehen“ trotz Nähe", "", 0, 0.5, 0.01,
+    ("PF_MISS_BASE_PROB", "Messmodell", "„Nicht gesehen“ trotz Nähe", "", 0.01, 0.5, 0.01,
      "Wie oft ein Sensor das Halsband trotz Nähe verpasst. Höher = „nicht gesehen“ schiebt Lola weniger weg.", "pf"),
     ("PRESENCE_LOST_SEC", "Anwesenheit", "„Weg“ melden nach", "s", 5, 600, 5,
      "So lange ohne ausreichend starke Sichtung, bis Lola als „außer Reichweite“ gilt (Karte und Home Assistant).",
      "pf,legacy"),
-    ("PRESENCE_MIN_RSSI_DBM", "Anwesenheit", "Mindestsignal für „zu Hause“", "dBm", -110, -50, 1,
+    ("PRESENCE_MIN_RSSI_DBM", "Anwesenheit", "Mindestsignal für „zu Hause“", "dBm", -120, -50, 1,
      "Schwächere Sichtungen halten die Anzeige nicht mehr am Leben (z. B. Lola draußen vor dem Fenster). "
-     "-100 = jede Sichtung zählt. Typisch: -90 bis -85; zu hoch → sie gilt in entfernten Ecken als weg.",
+     "-120 = jede Sichtung zählt, -100 (Standard) ignoriert nur extrem schwache. Typisch: -90 bis -85; "
+     "zu hoch → sie gilt in entfernten Ecken als weg.",
      "pf,legacy"),
     ("SENSOR_TIMEOUT_SEC", "Messmodell", "Messwert gilt als aktuell", "s", 5, 120, 1,
-     "So lange zählt eine Sichtung, bevor der Sensor als „sieht sie nicht“ gilt.", "pf,legacy"),
+     "So lange gilt die letzte Sichtung eines Sensors als aktuell – für die Zahl der beteiligten Sensoren und "
+     "den Status „aktiv“ (im Partikelfilter nicht für die Position selbst).", "pf,legacy"),
     # --- Robustheit -------------------------------------------------------------------
     ("PF_PARTICLES", "Robustheit", "Anzahl Partikel", "", 300, 5000, 100,
      "Mehr = genauer und stabiler, braucht mehr Rechenzeit (Pi Zero: ≤ 800). Setzt den Filter zurück.", "pf"),

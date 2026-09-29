@@ -51,6 +51,14 @@ class CollectingPublisher:
 def replay(path, engine, config_dir, params_override=None, include_config=False):
     tmp = tempfile.mkdtemp(prefix="trilola_replay_")
     shutil.copytree(config_dir, os.path.join(tmp, "config"))
+    tuning_path = os.path.join(tmp, "config", "tuning.json")
+    if params_override and os.path.exists(tuning_path):
+        # --params soll gewinnen: gleichnamige Werte aus dem kopierten Feintuning entfernen
+        with open(tuning_path, "r", encoding="utf-8") as handle:
+            stored = json.load(handle)
+        if isinstance(stored, dict):
+            with open(tuning_path, "w", encoding="utf-8") as handle:
+                json.dump({k: v for k, v in stored.items() if k not in params_override}, handle)
 
     class Sec:
         pass

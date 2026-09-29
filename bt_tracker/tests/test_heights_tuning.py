@@ -95,6 +95,46 @@ def test_calibration_fit_with_heights_recovers_model():
     assert rms(cfg3d) < 0.6 * rms(cfg2d)  # 2D erklärt die Nahpunkte schlechter
 
 
+def test_calibration_fit_uses_height_per_point():
+    """Messpunkte mit eigener Höhe (x, y, z): z. B. Halsband auf dem Tisch statt am Boden."""
+    rng = np.random.default_rng(5)
+    sensors = {"a": ([0, 0], 220.0), "b": ([500, 0], 86.0), "c": ([0, 600], 86.0), "d": ([500, 600], 120.0)}
+    points = [(x, y, z) for x in (60, 250, 440) for y in (80, 300, 520) for z in (25.0, 86.0)]
+    samples = {sid: [] for sid in sensors}
+    for sid, (pos, zs) in sensors.items():
+        for x, y, z in points:
+            d = math.sqrt((x - pos[0]) ** 2 + (y - pos[1]) ** 2 + (zs - z) ** 2) / 100.0
+            samples[sid].append(((x, y, z), list(-62.0 - 24.0 * math.log10(max(d, 0.3)) + rng.normal(0, 0.5, 12))))
+    positions = {sid: pos for sid, (pos, _) in sensors.items()}
+    heights = {sid: z for sid, (_, z) in sensors.items()}
+    cfg, glob = fit_pooled(samples, positions, sensor_heights=heights, point_height_cm=25.0)
+    assert glob["n_factor"] == pytest.approx(2.4, abs=0.05)
+    assert all(abs(c["tx_power"] + 62.0) < 0.5 for c in cfg.values())
+    flat = {sid: [((x, y), w) for (x, y, _), w in rows] for sid, rows in samples.items()}  # Höhe je Punkt ignoriert
+    cfg_flat, _ = fit_pooled(flat, positions, sensor_heights=heights, point_height_cm=25.0)
+    rms = lambda c: np.mean([v["calibration_rms_db"] for v in c.values()])  # noqa: E731
+    assert rms(cfg) < rms(cfg_flat)
+
+
+def test_calibration_session_keeps_point_height(tmp_path):
+    from calibration_session import CalibrationSession
+    t = {"now": 0.0}
+    session = CalibrationSession(str(tmp_path), clock=lambda: t["now"])
+    session.start(100, -200, 30, "k1", "Tisch", z=86)
+    assert session.state()["active"]["z"] == 86.0
+    for _ in range(5):
+        session.on_reading("a", -70, True)
+    t["now"] = 40.0
+    assert session.tick()
+    assert session.state()["points"][0]["z"] == 86.0
+    session.start(0, 0, 30, "k2")                         # ohne Höhe: wie bisher
+    assert session.state()["active"]["z"] is None
+    with pytest.raises(ValueError):
+        session.start(0, 0, 30, "k3", z=float("nan"))
+    reloaded = CalibrationSession(str(tmp_path))
+    assert reloaded.data["points"][0]["z"] == 86.0
+
+
 def test_height_via_mqtt_and_state(tmp_path):
     app = make_app(tmp_path)
     baselines = len(app.engine.radio_env.baseline_links())
@@ -193,6 +233,29 @@ def test_tuning_schema_defaults_within_limits():
     for key, _g, _l, _u, low, high, _s, _h, _e in tuning.SCHEMA:
         default = DEFAULT_PARAMS.get(key, DEFAULTS.get(key))
         assert default is not None and low <= default <= high, key
+
+
+def test_tuning_defaults_consistent_and_on_step():
+    from core.pf_engine import DEFAULTS
+    from tracker_app import DEFAULT_PARAMS
+    for key, _g, _l, _u, low, _high, step, _h, _e in tuning.SCHEMA:
+        if key in DEFAULT_PARAMS and key in DEFAULTS:
+            assert DEFAULT_PARAMS[key] == DEFAULTS[key], key
+        default = DEFAULT_PARAMS.get(key, DEFAULTS.get(key))
+        assert abs((default - low) / step - round((default - low) / step)) < 1e-9, key
+
+
+def test_not_seen_next_to_sensor_never_gives_nan():
+    """PF_MISS_BASE_PROB = 0 direkt neben einem Sensor: log(0) darf die Gewichte nicht zerstören."""
+    engine = ParticleEngine({"PF_PARTICLES": 300, "PF_MISS_BASE_PROB": 0.0, "RANDOM_SEED": 2})
+    node = SensorNode("a", {"pos": [0.0, 0.0], "tx_power": -55.0, "n_factor": 2.0})
+    rng = np.random.default_rng(0)
+    engine.particles, engine.mode = np.zeros((engine.n, 4)), np.zeros(engine.n, dtype=np.int8)
+    engine.particles[:, :2] = rng.normal(10.0, 5.0, size=(engine.n, 2))
+    engine.logw = np.full(engine.n, -math.log(engine.n))
+    engine._update(node, 1.0, None, False, 1)
+    assert np.all(np.isfinite(engine.logw))
+    assert abs(float(np.sum(np.exp(engine.logw))) - 1.0) < 1e-6
 
 
 def test_tuning_file_robust(tmp_path):

@@ -20,7 +20,7 @@ from config_manager import (
     TARGET_MAC_STATE_TOPIC,
 )
 
-TRACKER_VERSION = "2.4.0"
+TRACKER_VERSION = "2.5.2"
 TRACKER_ROOT = "bluecat/trilola"
 AVAILABILITY_TOPIC = TRACKER_ROOT + "/status"
 STATE_TOPIC_GPS = TRACKER_ROOT + "/gps/state"

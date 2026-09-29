@@ -52,17 +52,22 @@ class CalibrationSession:
         os.replace(tmp, self.path)
 
     # ------------------------------------------------------------------
-    def start(self, x, y, duration_s=90.0, point_id=None, label=""):
+    def start(self, x, y, duration_s=90.0, point_id=None, label="", z=None):
+        """z: Höhe des Halsbands über dem Fußboden (cm); None = Halsbandhöhe aus den Einstellungen."""
         x, y, duration = float(x), float(y), float(duration_s)
         if not all(math.isfinite(v) for v in (x, y, duration)):
             raise ValueError("ungültige Zahl")
+        if z is not None:
+            z = float(z)
+            if not (math.isfinite(z) and 0.0 <= z <= 600.0):
+                raise ValueError("ungültige Höhe")
         if len(self.data["points"]) >= MAX_POINTS:
             raise ValueError("zu viele Messpunkte")
         now = self.clock()
         self.active = {
             "id": str(point_id or uuid.uuid4().hex[:8])[:32],
             "label": str(label or "")[:40],
-            "x": round(x, 1), "y": round(y, 1),
+            "x": round(x, 1), "y": round(y, 1), **({"z": round(z, 1)} if z is not None else {}),
             "duration_s": max(MIN_DURATION, min(duration, MAX_DURATION)),
             "started": now, "samples": {},
         }
@@ -92,6 +97,7 @@ class CalibrationSession:
         self.data["points"] = [p for p in self.data["points"] if p.get("id") != active["id"]]
         self.data["points"].append({
             "id": active["id"], "label": active["label"], "x": active["x"], "y": active["y"],
+            **({"z": active["z"]} if "z" in active else {}),
             "duration_s": active["duration_s"], "time": time.time(), "samples": active["samples"],
         })
         self._save()
@@ -119,7 +125,8 @@ class CalibrationSession:
         for point in self.data["points"]:
             for sid, windows in (point.get("samples") or {}).items():
                 if sid in samples:
-                    samples[sid].append(((point["x"], point["y"]), [tuple(w) for w in windows]))
+                    where = (point["x"], point["y"]) + ((point["z"],) if point.get("z") is not None else ())
+                    samples[sid].append((where, [tuple(w) for w in windows]))
         usable_points = sum(1 for p in self.data["points"]
                             if sum(1 for w in (p.get("samples") or {}).values() if len(w) >= 3) >= 2)
         if usable_points < 3:
@@ -147,12 +154,12 @@ class CalibrationSession:
                 if windows:
                     mean, _, count = robust_point_statistics([tuple(w) for w in windows])
                     summary[sid] = [round(float(mean), 1), int(count)]
-            points.append({"id": p.get("id"), "label": p.get("label", ""), "x": p["x"], "y": p["y"],
+            points.append({"id": p.get("id"), "label": p.get("label", ""), "x": p["x"], "y": p["y"], "z": p.get("z"),
                            "time": p.get("time"), "duration_s": p.get("duration_s"), "sensors": summary})
         active = None
         if self.active is not None:
             elapsed = now - self.active["started"]
-            active = {"id": self.active["id"], "label": self.active["label"], "x": self.active["x"],
+            active = {"id": self.active["id"], "label": self.active["label"], "x": self.active["x"], "z": self.active.get("z"),
                       "y": self.active["y"], "duration_s": self.active["duration_s"],
                       "remaining_s": round(max(self.active["duration_s"] - elapsed, 0.0), 1),
                       "counts": {sid: len(v) for sid, v in self.active["samples"].items()}}

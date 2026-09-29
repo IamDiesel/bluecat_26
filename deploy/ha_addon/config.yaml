@@ -2,7 +2,7 @@
 # Installation: deploy/bluecat_deploy.py ha-addon (bzw. Oberfläche → Wartung → Home Assistant)
 name: TriLola
 description: Katzen-Tracker – Geräte-Rollout, Karte, Kalibrierung und Feintuning
-version: "2.4.0"
+version: "2.6.3"
 slug: trilola
 arch:
   - aarch64
@@ -20,8 +20,11 @@ panel_title: TriLola
 host_network: true
 # ESP32 per USB flashen, wenn er an diesem Rechner steckt
 uart: true
+# Hotspots: Kippy-GPS-Verlauf über den Dienst kippy.export_history (HA-API) und dessen Datei in www/ lesen
+homeassistant_api: true
 map:
   - addon_config:rw
+  - homeassistant_config:ro
 # Werkzeuge und Kachel-Cache nicht mit sichern (groß, jederzeit neu ladbar)
 backup_exclude:
   - "*platformio/*"

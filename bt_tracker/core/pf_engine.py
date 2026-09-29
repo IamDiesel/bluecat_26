@@ -297,11 +297,14 @@ class ParticleEngine:
             sigma = np.sqrt(node.sigma_db ** 2 + 9.0) / math.sqrt(max(quality, 0.1))
             p_det = _norm_cdf((mu - node.detection_floor) / sigma)
             base = float(_p(self.params, "PF_MISS_BASE_PROB"))
-            ll = np.log(base + (1.0 - base) * (1.0 - p_det))
+            # nie log(0): bei base = 0 und p_det = 1 würden alle Gewichte NaN
+            ll = np.log(np.maximum(base + (1.0 - base) * (1.0 - p_det), 1e-9))
         ll = beta * ll
         prior = self.logw
         joint = prior + ll
         m = float(np.max(joint))
+        if not math.isfinite(m):
+            return offset  # Messung passt zu keinem Partikel (numerisch) → verwerfen statt Gewichte zu zerstören
         log_marginal = m + math.log(float(np.sum(np.exp(joint - m))))
         self.logw = joint - log_marginal
         if present:
@@ -326,7 +329,9 @@ class ParticleEngine:
             inject_frac = max(0.0, 1.0 - math.exp(min(self.s_fast - self.s_slow, 0.0)))
             inject_frac = min(inject_frac, float(_p(self.params, "PF_MAX_INJECT")))
         ess_limit = float(_p(self.params, "PF_RESAMPLE_ESS")) * self.n
-        n_inject = int(round(inject_frac * self.n)) if inject_frac > 0.02 else 0
+        # kleine Schwelle gegen ständiges Einstreuen, aber nie über dem eingestellten Maximum
+        threshold = min(0.02, 0.5 * float(_p(self.params, "PF_MAX_INJECT")))
+        n_inject = int(round(inject_frac * self.n)) if inject_frac > threshold else 0
         if self._ess() >= ess_limit and n_inject == 0:
             return
         w = np.exp(self.logw)

@@ -354,3 +354,152 @@ def test_ota_no_response_message(tmp_path, monkeypatch, capsys):
 def test_run_redacted_streams_and_hides(tmp_path):
     code, out = bd.run_redacted([sys.executable, "-c", "print('auth=Geheim123'); print('ok')"], ["Geheim123"])
     assert code == 0 and "Geheim123" not in out and "auth=***" in out and "ok" in out
+
+
+def test_pi_install_powers_bluetooth_for_sensor():
+    script = open(os.path.join(bd.HERE, "remote", "pi_install.sh"), encoding="utf-8").read()
+    bt = script.index("rfkill unblock bluetooth")
+    assert bt < script.index("write_unit bluecat-sensor.service")      # vor dem Start des Sensors
+    assert "bluetoothctl power on" in script and "Powered: yes" in script
+    assert "disable-bt" in script                                        # Hinweis, falls BT abgeschaltet ist
+
+
+def test_pi_install_prefers_usb_bluetooth_stick(tmp_path):
+    """USB-Stick erkannt → Firmware, eingebauter Chip aus (Pi 4: disable-bt, falsches -pi5 wird korrigiert), Neustart."""
+    script = open(os.path.join(bd.HERE, "remote", "pi_install.sh"), encoding="utf-8").read()
+    start = script.index("REBOOT_NEEDED=0")
+    end = script.index("# Bluetooth einschalten")
+    block = script[start:end].replace("/sys/bus/usb/devices", str(tmp_path / "usb")) \
+        .replace("/proc/device-tree/model", str(tmp_path / "model")).replace("/boot/firmware/config.txt", str(tmp_path / "config.txt"))
+    dev = tmp_path / "usb" / "1-1.3:1.0"
+    dev.mkdir(parents=True)
+    for name, value in (("bInterfaceClass", "e0"), ("bInterfaceSubClass", "01"), ("bInterfaceProtocol", "01")):
+        (dev / name).write_text(value + "\n")
+    (tmp_path / "model").write_bytes(b"Raspberry Pi 4 Model B Rev 1.5\0")
+    (tmp_path / "config.txt").write_text("[all]\ndtoverlay=disable-bt-pi5\n")
+    harness = ("set -euo pipefail\nlog(){ echo \"LOG $*\"; }\nwarn(){ echo \"WARN $*\"; }\n"
+               "sudo(){ if [ \"$1\" = apt-get ] || [ \"$1\" = systemctl ]; then echo \"SUDO $*\"; else \"$@\"; fi; }\n"
+               "dpkg(){ return 1; }\nsystemctl(){ return 1; }\nROLE_SENSOR=1\nBLUETOOTH=auto\nSTAMP=x\n" + block +
+               "echo REBOOT=$REBOOT_NEEDED\n")
+    import subprocess
+    out = subprocess.run(["bash", "-c", harness], capture_output=True, text=True, check=True).stdout
+    assert "SUDO apt-get install -y -qq firmware-realtek" in out and "REBOOT=1" in out
+    assert (tmp_path / "config.txt").read_text() == "[all]\ndtoverlay=disable-bt\n"
+    out = subprocess.run(["bash", "-c", harness], capture_output=True, text=True, check=True).stdout
+    assert "REBOOT=0" in out                                            # zweiter Lauf: nichts mehr zu tun
+    (dev / "bInterfaceClass").write_text("08\n")                         # kein Bluetooth-Stick
+    (tmp_path / "config.txt").write_text("[all]\n")
+    out = subprocess.run(["bash", "-c", harness], capture_output=True, text=True, check=True).stdout
+    assert "REBOOT=0" in out and (tmp_path / "config.txt").read_text() == "[all]\n"
+
+
+def test_sensor_unit_unblocks_bluetooth_before_start(tmp_path):
+    script = open(os.path.join(bd.HERE, "remote", "pi_install.sh"), encoding="utf-8").read()
+    func = script[script.index("write_unit() {"):script.index("# Alte Sensor-Dienste")]
+    pre = script[script.index("    BT_PRE=\"\""):script.index("    write_unit bluecat-sensor.service")]
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    for tool in ("rfkill", "bluetoothctl", "timeout"):
+        (bindir / tool).write_text("#!/bin/sh\n")
+        (bindir / tool).chmod(0o755)
+    harness = (f"set -euo pipefail\nexport PATH={bindir}:$PATH\nUNIT_DIR={tmp_path}\nBASE=/home/pi/bluecat\nSTAMP=x\n"
+               "USER=pi\nsudo(){ \"$@\"; }\n" + func + pre +
+               'write_unit bluecat-sensor.service "Sensor" "$BASE/sensor" bluecat2mqtt.py "$BT_PRE"\n')
+    import subprocess
+    subprocess.run(["bash", "-c", harness], check=True, capture_output=True, text=True)
+    unit = (tmp_path / "bluecat-sensor.service").read_text()
+    assert f"ExecStartPre=-+{bindir}/rfkill unblock bluetooth\n" in unit
+    assert f"ExecStartPre=-+{bindir}/timeout 10 {bindir}/bluetoothctl power on\n" in unit
+    assert unit.index("ExecStartPre") < unit.index("ExecStart=/home/pi/bluecat/venv/bin/python -u bluecat2mqtt.py")
+
+
+FAKE_HA_STORE = r"""#!/bin/sh
+# Fake-„ha“ mit trägem Store: die neue Version erscheint erst nach dem dritten Reload
+echo "$*" >> "$HA_LOG"
+case "$1" in
+  store|supervisor) n=$(cat "$HA_DIR/reloads" 2>/dev/null || echo 0); echo $((n + 1)) > "$HA_DIR/reloads"; exit 0 ;;
+esac
+if [ "$2" = update ]; then echo "$NEW" > "$HA_DIR/installed"; exit 0; fi
+if [ "$2" = info ]; then
+  n=$(cat "$HA_DIR/reloads" 2>/dev/null || echo 0)
+  inst=$(cat "$HA_DIR/installed" 2>/dev/null || echo "2.5.1-1")
+  if [ "$n" -ge 3 ]; then latest="$NEW"; else latest="2.5.1-1"; fi
+  if [ "$inst" != "$latest" ]; then upd=true; else upd=false; fi
+  echo "{\"name\": \"TriLola\", \"version\": \"$inst\", \"version_latest\": \"$latest\", \"update_available\": $upd}"
+fi
+exit 0
+"""
+
+
+@pytest.mark.parametrize("shell", ["sh", "zsh"])
+def test_ha_install_waits_for_store_and_refreshes_entity(tmp_path, shell, monkeypatch):
+    import shutil as _shutil
+    import subprocess
+    if not _shutil.which(shell):
+        pytest.skip(f"{shell} nicht installiert")
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    (bindir / "ha").write_text(FAKE_HA_STORE)
+    (bindir / "curl").write_text('#!/bin/sh\necho "curl $*" >> "$HA_LOG"\n'
+                                 'case "$*" in *core/api/states*) echo \'[{"entity_id": "update.trilola_update"}, '
+                                 '{"entity_id": "update.anderes_update"}]\' ;; esac\n')
+    (bindir / "sleep").write_text("#!/bin/sh\nexit 0\n")                 # nicht wirklich warten
+    for f in ("ha", "curl", "sleep"):
+        (bindir / f).chmod(0o755)
+    new = "2.5.3-20260928170000"
+    env = {"PATH": f"{bindir}:/usr/bin:/bin", "HA_LOG": str(tmp_path / "ha.log"), "HA_DIR": str(tmp_path),
+           "NEW": new, "SUPERVISOR_TOKEN": "tok"}
+    res = subprocess.run([shell, "-c", bd.ha_install_script(start=True, version=new)], env=env, capture_output=True,
+                         text=True, timeout=60)
+    assert res.returncode == 0, res.stdout + res.stderr
+    log = (tmp_path / "ha.log").read_text()
+    assert "apps update local_trilola" in log and "rebuild" not in log     # erst warten, dann echtes Update
+    assert f"» Installiert: {new}" in res.stdout
+    posts = [line for line in log.splitlines() if "update_entity" in line]
+    assert len(posts) == 1 and "update.trilola_update" in posts[0]
+    with pytest.raises(bd.DeployError):
+        bd.ha_install_script(version="1.0; rm -rf /")
+
+
+def test_app_version_file_and_ha_entity(tmp_path, monkeypatch):
+    members, tar, data = bundle_members()
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as t:
+        assert t.extractfile("trilola/app/VERSION").read().decode().strip() == "9.9.9-test"
+    (tmp_path / "VERSION").write_text("2.6.0-20260929183012\n")
+    monkeypatch.setattr(bd, "REPO", str(tmp_path))
+    assert bd.installed_app_version() == {"version": "2.6.0", "full": "2.6.0-20260929183012",
+                                          "installed": "29.09.2026 18:30"}
+    msgs = gui.app_version_discovery("2.6.0")
+    config = json.loads(msgs[0][1])
+    assert config["device"] == {"identifiers": ["bluecat_trilola_engine"]}   # hängt am TriLola-Gerät
+    assert config["entity_category"] == "diagnostic" and msgs[1] == (gui.APP_VERSION_TOPIC, "2.6.0")
+    live = gui.LiveState()
+    live.announce = msgs
+
+    class Client:
+        published = []
+        subscribe = staticmethod(lambda topic: None)
+
+        def publish(self, topic, payload, qos=0, retain=False):
+            self.published.append((topic, payload, retain))
+    client = Client()
+    live.client = client
+    live._on_connect(client, None, None, 0)
+    assert [(t, r) for t, _, r in client.published] == [(msgs[0][0], True), (gui.APP_VERSION_TOPIC, True)]
+
+
+def test_pc_ui_learns_installed_app_version_over_mqtt():
+    import types
+    live = gui.LiveState()
+    assert gui.APP_VERSION_TOPIC in live.TOPICS
+    live._on_message(None, None, types.SimpleNamespace(topic=gui.APP_VERSION_TOPIC, payload=b"2.6.1", retain=True))
+    assert live.snapshot()["tracker"]["app"] == "2.6.1"
+
+
+def test_deploy_module_has_no_invalid_escapes():
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", SyntaxWarning)
+        for name in ("bluecat_deploy.py", "bluecat_gui.py", "hotspots.py"):
+            with open(os.path.join(bd.HERE, name), "rb") as handle:
+                compile(handle.read(), name, "exec")

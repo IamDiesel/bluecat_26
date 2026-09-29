@@ -377,7 +377,9 @@ class RadioTomography:
                           for w in (floorplan_data or {}).get("walls") or [])
         heights = dict(getattr(env, "sensor_heights", {}) or {})
         key = (grid.key, tuple(sorted((r, t, round(b, 1)) for r, t, b, _ in baselines)), walls_key,
-               (floorplan_data or {}).get("wall_scale"), tuple(sorted((k, round(v)) for k, v in heights.items())))
+               (floorplan_data or {}).get("wall_scale"), tuple(sorted((k, round(v)) for k, v in heights.items())),
+               # verschobene Sensoren: neu rechnen, auch wenn Raster und Normalwerte gleich bleiben
+               tuple(sorted((k, round(float(v[0])), round(float(v[1]))) for k, v in pos.items())))
         if key != self.static_key:
             self.static_key = key
             self.static = None

@@ -225,7 +225,7 @@ ist die Wolke vermutlich am falschen Ort. Dann wird ein Anteil
 \rho = \min\!\left(\max\!\left(0,\ 1 - e^{\,s_{\text{fast}} - s_{\text{slow}}}\right),\ \rho_{\max}\right)
 ```
 
-der Partikel ersetzt, sobald er über 2 % liegt ($`\rho_{\max}`$ = *Wiederfinden: max. Anteil neuer
+der Partikel ersetzt, sobald er über $`\min(2\%,\ \rho_{\max}/2)`$ liegt ($`\rho_{\max}`$ = *Wiederfinden: max. Anteil neuer
 Partikel*). Kam gerade eine Sichtung, landet die Hälfte auf einem Ring um den meldenden Sensor – der
 Radius aus dem umgekehrten Pegelmodell, $`10^{(P_0 - z)/(10n)}`$ m, auf den Boden projiziert – und die
 andere Hälfte gleichmäßig in den Räumen; sonst alle gleichmäßig in den Räumen.
@@ -333,7 +333,8 @@ Alle Messpunkte $`k`$ aller Sensoren $`j`$ werden gemeinsam gefittet:
 ```
 
 * $`\bar z_{jk}`$ = robuster Mittelwert am Punkt (Ausreißer über 3 MAD verworfen), $`d_{jk}`$ = schräger
-  Abstand ([§2](#2-geometrie-schräger-abstand)), $`A_{jk}`$ = Wanddämpfung laut Grundriss,
+  Abstand ([§2](#2-geometrie-schräger-abstand)); hat ein Messpunkt eine eigene Höhe (ab Tracker 2.5),
+  ersetzt sie dort die Halsbandhöhe $`h_T`$. $`A_{jk}`$ = Wanddämpfung laut Grundriss,
   $`s`$ = Korrekturfaktor für alle Wanddämpfungen (0–3).
 * Robust gelöst (Soft-L1-Verlust, Skala 3 dB) mit $`P_0 \in [-110;\ -20]`$ dBm, $`n \in [1;\ 5]`$.
 * Ergebnis je Sensor: `tx_power` = $`P_{0,j}`$, `n_factor` = $`n`$, `sigma_db` = Streuung der Reste
@@ -367,13 +368,13 @@ Schlüssel = Name in `config/tuning.json`, per MQTT und in `secrets_tri.py`.
 
 | In der App | Schlüssel · Symbol | Standard (Bereich) | Wirkung im Modell | ↑ größer · ↓ kleiner |
 |---|---|---|---|---|
-| **Typische Laufgeschwindigkeit** | `PF_MOVE_SPEED_CM_S` · $`\sigma_v`$ | 90 cm/s (20–300) | Streuung der Geschwindigkeit laufender Partikel ([§4](#4-bewegungsmodell)) | ↑ folgt schnellen Sprints und Raumwechseln besser, springt aber leichter · ↓ ruhigere Bahnen, hinkt beim Rennen hinterher |
+| **Typische Laufgeschwindigkeit** | `PF_MOVE_SPEED_CM_S` · $`\sigma_v`$ | 90 cm/s (20–300) | Streuung der Geschwindigkeit laufender Partikel je Achse – mittleres Tempo ≈ 1,25 · $`\sigma_v`$ ([§4](#4-bewegungsmodell)) | ↑ folgt schnellen Sprints und Raumwechseln besser, springt aber leichter · ↓ ruhigere Bahnen, hinkt beim Rennen hinterher |
 | **Richtungsbeständigkeit** | `PF_MOVE_TAU_SEC` · $`\tau`$ | 2 s (0,5–10) | wie lange die Laufrichtung erhalten bleibt | ↑ glatte, zielstrebige Bahnen, träge bei Haken · ↓ zickzack, reagiert schnell auf Richtungswechsel |
 | **Unruhe in Ruhe** | `PF_REST_DIFFUSION_CM` · $`D_R`$ | 4 cm/√s (0–20) | zufälliges Wandern ruhender Partikel | ↑ passt sich neuen Messungen schneller an, Anzeige zittert mehr · ↓ ruhige Anzeige beim Schlafen, übersieht kleine echte Ortswechsel |
 | **Zusätzliche Unruhe in Bewegung** | `PF_MOVE_DIFFUSION_CM` · $`D_M`$ | 15 cm/√s (0–60) | zufällige Abweichung zusätzlich zur Laufbewegung | ↑ robuster bei unvorhersehbaren Wegen, ungenauer · ↓ strenger an der Laufrichtung |
 | **Mittlere Ruhedauer (Modell)** | `PF_MEAN_REST_SEC` · $`T_R`$ | 10 s (2–300) | mittlere Zeit, bis ein ruhender Partikel losläuft | ↑ bleibt eher liegen, bemerkt Aufbrechen später · ↓ rechnet ständig mit Aufbruch, Wolke weiter |
 | **Mittlere Laufdauer (Modell)** | `PF_MEAN_MOVE_SEC` · $`T_M`$ | 10 s (2–120) | mittlere Dauer einer Laufphase | ↑ lange Wege möglich, beruhigt sich langsamer · ↓ kurze Wege, zur Ruhe kommt die Wolke schneller |
-| **Höchstgeschwindigkeit** | `MAX_POSITION_SPEED_CM_S` · $`v_{\max}`$ | 350 cm/s (100–800) | harte Obergrenze der Partikelgeschwindigkeit | ↑ lässt wilde Sprints zu, auch Fehlsprünge · ↓ verhindert Teleportation, zu niedrig = hinkt echten Sprints nach |
+| **Höchstgeschwindigkeit** | `MAX_POSITION_SPEED_CM_S` · $`v_{\max}`$ | 350 cm/s (100–800) | harte Obergrenze der Partikelgeschwindigkeit (ohne den Zufallsanteil der Diffusion) | ↑ lässt wilde Sprints zu, auch Fehlsprünge · ↓ verhindert Teleportation, zu niedrig = hinkt echten Sprints nach |
 
 > Warum ist die mittlere Ruhedauer so kurz, obwohl Katzen lange schlafen? $`T_R`$ ist eine
 > Modellannahme für den Filter, keine Statistik: Mit kurzer Annahme bemerkt der Filter das
@@ -384,7 +385,7 @@ Schlüssel = Name in `config/tuning.json`, per MQTT und in `secrets_tri.py`.
 | In der App | Schlüssel | Standard (Bereich) | Wirkung | ↑ größer · ↓ kleiner |
 |---|---|---|---|---|
 | **„Weg“ melden nach** | `PRESENCE_LOST_SEC` | 30 s (5–600) | Wartezeit ohne ausreichend starke Sichtung, bis Lola als „außer Reichweite“ gilt ([§6](#6-schätzung-und-ausgabe)) | ↑ weniger falsches „weg“, verschwindet später · ↓ verschwindet schneller, kann in Funklöchern flackern |
-| **Mindestsignal für „zu Hause“** | `PRESENCE_MIN_RSSI_DBM` | −100 dBm (−110 bis −50) | nur Sichtungen mindestens so stark halten Lola „anwesend“ | ↑ (z. B. −90) schwache Sichtungen von draußen zählen nicht mehr; zu hoch → gilt in entfernten Ecken als weg · ↓ jede Sichtung zählt |
+| **Mindestsignal für „zu Hause“** | `PRESENCE_MIN_RSSI_DBM` | −100 dBm (−120 bis −50) | nur Sichtungen mindestens so stark halten Lola „anwesend“; −120 = jede Sichtung | ↑ (z. B. −90) schwache Sichtungen von draußen zählen nicht mehr; zu hoch → gilt in entfernten Ecken als weg · ↓ jede Sichtung zählt |
 
 ### 9.3 Messmodell
 
@@ -392,8 +393,8 @@ Schlüssel = Name in `config/tuning.json`, per MQTT und in `secrets_tri.py`.
 |---|---|---|---|---|
 | **Halsbandhöhe über dem Fußboden** | `TAG_HEIGHT_CM` · $`h_T`$ | 25 cm (0–200) | Höhe im schrägen Abstand ([§2](#2-geometrie-schräger-abstand)) | an die Katze anpassen: stehend ~25 cm, liegend ~10 cm; wirkt vor allem nahe an hoch montierten Sensoren |
 | **Ausreißer-Toleranz** | `PF_STUDENT_NU` · $`\nu`$ | 4 (1–30) | Form der Likelihood ([§3.3](#33-robuste-likelihood-gesehen)) | ↑ Normalverteilung: jeder Wert zählt voll, genauer bei sauberen Daten, anfällig für Ausreißer · ↓ robust, einzelne verrückte Werte schaden kaum, reagiert zögerlicher |
-| **Gedächtnis je Sensor** | `PF_SAME_SENSOR_CORRELATION_SEC` · $`\tau_c`$ | 6 s (0–30) | Abschwächung schneller Folgemeldungen ([§3.5](#35-gedächtnis-je-sensor)) | ↑ ein oft meldender Sensor dominiert weniger, Anzeige reagiert langsamer · ↓ jede Meldung zählt voll, schneller, aber übermütig |
-| **„Nicht gesehen“ trotz Nähe** | `PF_MISS_BASE_PROB` · $`p_0`$ | 0,10 (0–0,5) | Grundrate verpasster Sichtungen ([§3.4](#34-nicht-gesehen-ist-auch-eine-information)) | ↑ „nicht gesehen“ schiebt Lola kaum weg (gut bei unzuverlässigen Sensoren) · ↓ „nicht gesehen“ wirkt stark, Lola wird von schweigenden Sensoren weggedrückt |
+| **Gedächtnis je Sensor** | `PF_SAME_SENSOR_CORRELATION_SEC` · $`\tau_c`$ | 6 s (0–10) | Abschwächung schneller Folgemeldungen, mindestens Faktor 0,2 ([§3.5](#35-gedächtnis-je-sensor)) | ↑ ein oft meldender Sensor dominiert weniger, Anzeige reagiert langsamer · ↓ jede Meldung zählt voll, schneller, aber übermütig |
+| **„Nicht gesehen“ trotz Nähe** | `PF_MISS_BASE_PROB` · $`p_0`$ | 0,10 (0,01–0,5) | Grundrate verpasster Sichtungen ([§3.4](#34-nicht-gesehen-ist-auch-eine-information)) | ↑ „nicht gesehen“ schiebt Lola kaum weg (gut bei unzuverlässigen Sensoren) · ↓ „nicht gesehen“ wirkt stark, Lola wird von schweigenden Sensoren weggedrückt |
 | **Messwert gilt als aktuell** | `SENSOR_TIMEOUT_SEC` | 30 s (5–120) | Höchstalter einer Sichtung für „sieht sie“ ([§6](#6-schätzung-und-ausgabe)) | ↑ übersteht Sensor-Aussetzer, meldet „weg“ später · ↓ strenger; wirkt vor allem, wenn ein Sensor ganz verstummt |
 
 ### 9.4 Robustheit
@@ -401,7 +402,7 @@ Schlüssel = Name in `config/tuning.json`, per MQTT und in `secrets_tri.py`.
 | In der App | Schlüssel · Symbol | Standard (Bereich) | Wirkung im Modell | ↑ größer · ↓ kleiner |
 |---|---|---|---|---|
 | **Anzahl Partikel** | `PF_PARTICLES` · $`N`$ | 1500 (300–5000) | Zahl der Hypothesen; eine Änderung setzt den Filter zurück | ↑ genauer, stabiler, mehrere Wolken gleichzeitig möglich, mehr Rechenzeit · ↓ schneller (Pi Zero: ≤ 800), gröber, verliert Lola leichter |
-| **Wiederfinden: max. Anteil neuer Partikel** | `PF_MAX_INJECT` · $`\rho_{\max}`$ | 0,20 (0–0,5) | Obergrenze der eingestreuten Partikel ([§5](#5-resampling-und-wiederfinden)) | ↑ findet sie nach Fehlern schneller wieder, springt leichter · ↓ stabil, bleibt aber länger am falschen Ort hängen; 0 = aus |
+| **Wiederfinden: max. Anteil neuer Partikel** | `PF_MAX_INJECT` · $`\rho_{\max}`$ | 0,20 (0–0,5) | Obergrenze der eingestreuten Partikel; eingestreut wird erst ab dem halben Wert bzw. 2 % ([§5](#5-resampling-und-wiederfinden)) | ↑ findet sie nach Fehlern schneller wieder, springt leichter · ↓ stabil, bleibt aber länger am falschen Ort hängen; 0 = aus |
 | **Neustart nach Pause** | `PF_TRACK_RESET_SEC` | 600 s (30–3600) | nach so langer Zeit ohne Sichtung beginnt die Suche neu | ↑ knüpft nach Pausen an den alten Ort an · ↓ nach kurzer Abwesenheit sucht der Filter unvoreingenommen neu |
 
 ### 9.5 Ausgabe

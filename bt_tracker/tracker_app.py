@@ -64,7 +64,7 @@ DEFAULT_PARAMS = {
     "TRACKING_ENGINE": "pf",
     "SENSOR_TIMEOUT_SEC": 30.0,
     # Anwesenheit: „weg“, wenn so lange kein Sensor sie mit mindestens diesem Signal gesehen hat.
-    # -100 dBm = jede Sichtung zählt (bisheriges Verhalten).
+    # -120 dBm = jede Sichtung zählt; -100 ignoriert nur extrem schwache Sichtungen.
     "PRESENCE_MIN_RSSI_DBM": -100.0,
     "PRESENCE_LOST_SEC": 30.0,
     "OFFLINE_TIMEOUT_SEC": 90.0,
@@ -430,7 +430,8 @@ class TriLolaApp:
             cmd = json.loads(payload) if payload.strip().startswith("{") else {"cmd": payload.strip()}
             action = str(cmd.get("cmd", ""))
             if action == "start":
-                session.start(cmd["x"], cmd["y"], cmd.get("duration_s", 90), cmd.get("id"), cmd.get("label", ""))
+                session.start(cmd["x"], cmd["y"], cmd.get("duration_s", 90), cmd.get("id"), cmd.get("label", ""),
+                              cmd.get("z"))
                 print(f"Kalibrierung: Messung bei ({session.active['x']}, {session.active['y']}) für "
                       f"{session.active['duration_s']:.0f} s")
             elif action == "cancel":

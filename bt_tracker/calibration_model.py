@@ -61,7 +61,8 @@ def fit_pooled(
     """Fittet das Modell. Liefert (configs je Sensor, globale Werte).
 
     ``sensor_heights``: Antennenhöhe je Sensor (cm, relativ zum Fußboden), ``point_height_cm``:
-    Höhe des Halsbands an den Messpunkten. Ohne Angaben wird eben (2D) gerechnet."""
+    Höhe des Halsbands an den Messpunkten. Ein Messpunkt (x, y, z) bringt seine eigene Höhe z mit.
+    Ohne Angaben wird eben (2D) gerechnet."""
     heights = sensor_heights or {}
     rows = []  # (sensor_index, dist_m, wall_db, mean, variance, count)
     names = [n for n in samples_by_sensor if n in sensor_positions]
@@ -71,8 +72,9 @@ def fit_pooled(
         for point, samples in samples_by_sensor[name]:
             if samples is None or len(samples) < min_samples:
                 continue
-            point = np.asarray(point, dtype=float)
-            dz = float(heights.get(name, point_height_cm)) - float(point_height_cm)
+            pz = float(point[2]) if len(point) > 2 else float(point_height_cm)
+            point = np.asarray(point[:2], dtype=float)
+            dz = float(heights.get(name, pz)) - pz
             dist_m = max(float(np.hypot(np.linalg.norm(point - pos), dz)) / 100.0, 0.3)
             walls = 0.0
             if floorplan is not None and getattr(floorplan, "has_walls", False):

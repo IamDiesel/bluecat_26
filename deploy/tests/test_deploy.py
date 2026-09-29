@@ -1,4 +1,5 @@
 import io
+import json
 import os
 import sys
 import tarfile
@@ -188,3 +189,50 @@ def test_cleanup_removes_tracker_orphans(tmp_path, monkeypatch):
     assert "bluecat/config/sensors/kunibert_kiosk/remove/set" in topics
     assert "bluecat/config/sensors/ron/remove/set" not in topics
     assert "bluecat/registry/esp32_877352/identity" in topics
+
+
+def test_tracker_backup_and_restore(tmp_path, monkeypatch):
+    fleet = make_fleet(tmp_path)
+    tuning_state = {"params": [
+        {"key": "PF_MOVE_SPEED_CM_S", "value": 70, "overridden": True},
+        {"key": "TAG_HEIGHT_CM", "value": 25, "overridden": False}], "engine": "pf"}
+    retained = {
+        "bluecat/config/floorplan/state": json.dumps({"default_wall_db": 5, "walls": [{"a": [0, 0], "b": [100, 0]}], "rooms": []}),
+        "bluecat/config/tracker/georef/state": json.dumps({"lat": 47.9, "lon": 10.2, "bearing_deg": 359.0, "reference": "kunibert",
+                                                           "source": "georef", "valid": True}),
+        "bluecat/config/tracker/tuning/state": json.dumps(tuning_state),
+        "bluecat/config/sensors/tom_esp/position/state": json.dumps({"x_cm": -4.7, "y_cm": -814.4, "height_cm": 86.0,
+                                                                    "height_set": True, "floor_cm": None, "configured": True}),
+        "bluecat/config/sensors/ron/position/state": json.dumps({"x_cm": 0, "y_cm": 0, "height_cm": 100, "height_set": False,
+                                                                "configured": False}),
+        "bluecat/config/sensors/tom_esp/calibration/state": json.dumps({"tx_power": -61.5, "n_factor": 2.8, "sigma_db": None}),
+        "bluecat/config/calibration/state": json.dumps({"points": []}),
+        "bluecat/registry/tom_esp/identity": json.dumps({"sensor_id": "tom_esp"}),
+    }
+    status = {"bluecat/trilola/status": "offline"}
+    monkeypatch.setattr(bd, "mqtt_collect", lambda f, topics, **k: status if topics == ["bluecat/trilola/status"] else dict(retained))
+    sent = []
+    monkeypatch.setattr(bd, "mqtt_publish_many", lambda f, items: sent.extend(items))
+    monkeypatch.setattr(bd, "BACKUP_DIR", str(tmp_path / "backup"))
+    path = bd.cmd_tracker_backup(fleet)
+    assert bd.latest_backup() == path
+    with pytest.raises(bd.DeployError):               # Tracker noch nicht da
+        bd.cmd_tracker_restore(fleet)
+    status["bluecat/trilola/status"] = "online"
+    bd.cmd_tracker_restore(fleet, parts=tuple(p for p in bd.RESTORE_PARTS if p != "calibration"))
+    got = {t: p for t, p, _ in sent}
+    assert json.loads(got["bluecat/config/floorplan/set"])["walls"][0]["b"] == [100, 0]
+    assert json.loads(got["bluecat/config/tracker/georef/set"]) == {"lat": 47.9, "lon": 10.2, "bearing_deg": 359.0,
+                                                                     "reference": "kunibert"}
+    assert json.loads(got["bluecat/config/tracker/tuning/set"]) == {"PF_MOVE_SPEED_CM_S": 70}
+    assert got["bluecat/config/sensors/tom_esp/position_y/set"] == "-814.4"
+    assert got["bluecat/config/sensors/tom_esp/height/set"] == "86.0"
+    assert not any("/ron/" in t for t in got)          # nicht platzierte Geräte bleiben unberührt
+    assert not any("calibration_" in t for t in got)
+    sent.clear()
+    bd.cmd_tracker_restore(fleet, path, parts=("calibration",))
+    assert {t: p for t, p, _ in sent} == {"bluecat/config/sensors/tom_esp/calibration_n_factor/set": "2.8",
+                                           "bluecat/config/sensors/tom_esp/calibration_tx_power/set": "-61.5"}
+    retained.clear()
+    with pytest.raises(bd.DeployError):               # leerer Broker
+        bd.cmd_tracker_backup(fleet)

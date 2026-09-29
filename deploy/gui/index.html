@@ -207,6 +207,14 @@ input[readonly] { background: var(--surface-2); color: var(--muted); }
 @keyframes fade { from { opacity: 0; } }
 .modal { width: min(560px, 100%); max-height: calc(100vh - 32px); overflow: auto; background: var(--surface); border-radius: 14px; box-shadow: var(--shadow-lg); border: 1px solid var(--line); }
 .modal.wide { width: min(760px, 100%); }
+.modal.xwide { width: min(1040px, 100%); }
+.pos-wrap { overflow-x: auto; margin: 0 0 8px; }
+table.plain.pos-table td { vertical-align: middle; padding: 4px 6px; }
+table.pos-table input, table.pos-table select { height: 30px; padding: 3px 7px; font-size: 13px; }
+table.pos-table td.num input { width: 86px; text-align: right; }
+table.plain.pos-table td.src { color: var(--muted); max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+table.pos-table tr.off td:not(.keep) { opacity: .45; }
+table.pos-table tr.bad td { background: var(--err-soft, rgba(220,38,38,.08)); }
 .modal-head { padding: 16px 18px 6px; display: flex; gap: 10px; align-items: flex-start; }
 .modal-head h3 { margin: 0; font-size: 16px; flex: 1; }
 .modal-body { padding: 8px 18px 4px; }
@@ -236,6 +244,8 @@ table.plain .mono { font-family: var(--mono); font-size: 12.5px; }
   .pills { margin-left: 0; }
   main { padding-left: 16px; padding-right: 16px; }
   .top-inner, nav.tabs { padding-left: 16px; padding-right: 16px; }
+  header.top { position: static; }  /* auf dem Handy nicht mitscrollen – sonst deckt der hohe Kopf die Karte ab */
+  .top-inner { padding-top: 8px; padding-bottom: 8px; gap: 10px; }
 }
 /* ---- Karte ---- */
 .map-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; }
@@ -249,6 +259,18 @@ table.plain .mono { font-family: var(--mono); font-size: 12.5px; }
 .seg button.on { background: var(--accent); color: var(--on-accent); }
 .seg button:disabled { opacity: .45; cursor: not-allowed; }
 .seg button svg { width: 15px; height: 15px; }
+/* Schmale Karte (Handy, HA-App): Modi nur als Symbole, Hintergrund als ein Umschalt-Knopf */
+#mv-base1 { display: none; }
+.map-wrap.narrow #mv-mode .lbl, .map-wrap.narrow #mv-base { display: none; }
+.map-wrap.narrow #mv-base1 { display: inline-flex; order: 2; }
+.map-wrap.narrow #mv-mode { order: 0; }
+.map-wrap.narrow .map-bar .spacer { order: 1; }
+.map-wrap.narrow #mv-tools, .map-wrap.narrow #mv-undo { order: 3; }
+.map-wrap.narrow #mv-tools .lbl { display: none; }
+.map-wrap.narrow .seg button { padding: 7px 9px; }
+.map-wrap.narrow .map-bar { left: 52px; right: 8px; top: 10px; gap: 6px; }
+.map-wrap.narrow .map-banner { top: 104px; left: 8px; right: 8px; }
+.map-wrap.narrow .map-hint { font-size: 12px; left: 8px; bottom: 8px; max-width: calc(100% - 16px); }
 .map-hint { position: absolute; z-index: 500; left: 12px; bottom: 12px; max-width: min(560px, calc(100% - 24px)); background: var(--surface); border: 1px solid var(--line); border-radius: 9px; padding: 7px 11px; font-size: 12.5px; box-shadow: var(--shadow); color: var(--text); }
 .map-hint:empty { display: none; }
 .map-banner { position: absolute; z-index: 500; top: 58px; left: 56px; right: 12px; }
@@ -264,6 +286,8 @@ table.plain .mono { font-family: var(--mono); font-size: 12.5px; }
 .sensor-list .s:hover { background: var(--surface-2); }
 .sensor-list .s .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sensor-list .s .v { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.sensor-list .s .grow { min-width: 70px; }
+.sensor-list .s input.cal-h { width: 54px; height: 26px; padding: 2px 6px; font-size: 12px; text-align: right; flex: none; }
 .checks label { display: flex; gap: 8px; align-items: center; font-size: 13px; padding: 3px 0; cursor: pointer; }
 .checks input { accent-color: var(--accent); }
 .legend-bar { height: 8px; border-radius: 4px; background: linear-gradient(90deg, rgba(250,204,21,.25), rgba(249,115,22,.7), rgba(220,38,38,.9)); margin: 6px 0 2px; }
@@ -674,11 +698,33 @@ function deviceCard(n) {
   </div>`;
 }
 
+function appCard(L) {
+  const a = L.app || {};
+  return `<div class="card">
+    <div class="card-head"><span class="dot on"></span><div style="flex:1"><div class="card-title">TriLola-App</div><div class="card-id">Home Assistant</div></div></div>
+    <div class="badges"><span class="badge accent">App</span></div>
+    <dl class="facts"><dt>Version</dt><dd title="${esc(a.full || "")}">${esc(a.version || "–")}</dd><dt>Installiert</dt><dd>${esc(a.installed || "–")}</dd>
+      <dt>Tracker</dt><dd>${esc((L.tracker || {}).version || "–")}</dd></dl>
+  </div>`;
+}
+
+// Oberfläche am PC: die App in Home Assistant meldet ihre Version über MQTT
+function remoteAppCard(L) {
+  const inst = (L.tracker || {}).app, repo = (L.versions || {}).app, outdated = inst && repo && vlt(inst, repo);
+  return `<div class="section"><div class="section-head"><h2>${ICON.target}Home-Assistant-App</h2></div><div class="grid"><div class="card">
+    <div class="card-head"><span class="dot on"></span><div style="flex:1"><div class="card-title">TriLola-App</div><div class="card-id">Home Assistant</div></div></div>
+    <div class="badges"><span class="badge accent">App</span>${outdated ? `<span class="badge warn">Update auf ${esc(repo)} verfügbar</span>` : ""}</div>
+    <dl class="facts"><dt>Installiert</dt><dd>${esc(inst)}</dd><dt>Im Repo</dt><dd>${esc(repo || "–")}</dd><dt>Tracker</dt><dd>${esc((L.tracker || {}).version || "–")}</dd></dl>
+    ${outdated ? `<div class="card-actions"><button class="btn primary sm primary-act" data-goto="tools">${ICON.down}Aktualisieren …</button></div>` : ""}
+  </div></div></div>`;
+}
+
 function localTrackerCard(L) {
   const lt = L.local_tracker, t = L.tracker || {};
+  if (!lt || trackerNode() !== "@addon") return `<div class="section"><div class="section-head"><h2>${ICON.target}Diese App</h2></div><div class="grid">${appCard(L)}</div></div>`;
   const state = lt.running ? `läuft seit ${ago((Date.now() / 1000) - lt.since).replace("vor ", "")}` : lt.wanted ? "startet neu …" : "angehalten";
   const repo = repoVersion("tracker"), outdated = t.version && repo && vlt(t.version, repo);
-  return `<div class="section"><div class="section-head"><h2>${ICON.target}Tracker in dieser App</h2></div><div class="grid"><div class="card">
+  return `<div class="section"><div class="section-head"><h2>${ICON.target}Diese App & Tracker</h2></div><div class="grid">${appCard(L)}<div class="card">
     <div class="card-head"><span class="dot ${lt.running ? "on" : "off"}"></span><div style="flex:1"><div class="card-title">TriLola-Tracker</div><div class="card-id">Home Assistant</div></div></div>
     <div class="badges"><span class="badge accent">Tracker</span>${outdated ? `<span class="badge warn">Neustart lädt ${esc(repo)}</span>` : ""}${lt.crashes ? `<span class="badge warn">${lt.crashes}× neu gestartet</span>` : ""}</div>
     <dl class="facts"><dt>Status</dt><dd>${esc(state)}</dd><dt>MQTT</dt><dd>${esc(t.status || "–")}</dd><dt>Version</dt><dd>${esc(t.version || "–")}</dd><dt>Modell</dt><dd>${esc(t.engine || "–")}</dd></dl>
@@ -714,7 +760,8 @@ function renderDevices() {
         ${f.kind === "unknown" ? `<button class="btn sm ghost" data-ignore="${i}">Ausblenden</button><button class="btn sm" data-goto="tools">Aufräumen …</button>` : (f.kind === "shelly" && f.data.gen < 2) ? "" : `<button class="btn sm ghost" data-ignore="${i}" title="Nicht mehr anzeigen">Ausblenden</button>${["shelly", "esp32"].includes(f.kind) && nodes().some((n) => n.type === f.kind) ? `<button class="btn sm" data-assign="${i}">Bestehendem Gerät zuordnen …</button>` : ""}<button class="btn sm primary" data-adopt="${i}">Als neues Gerät</button>`}</div>`).join("")}
     </div></div>`);
   }
-  if (trackerNode() === "@addon" && L.local_tracker) parts.push(localTrackerCard(L));
+  if (L.addon) parts.push(localTrackerCard(L));
+  else if ((L.tracker || {}).app) parts.push(remoteAppCard(L));
   for (const type of ["pi", "esp32", "shelly"]) {
     const list = nodes().filter((n) => n.type === type);
     const extra = type === "shelly"
@@ -1387,6 +1434,9 @@ function renderTools() {
   const html = `<div class="tools">${haPanel}
     <div class="panel"><h3>Home Assistant aufräumen</h3><p class="desc">Findet Einträge von Geräten, die es nicht mehr gibt (alte IDs, doppelte Geräte, Test-ESP32), und alte Tracker-Sensoren ohne Gerät. Die Vorschau ändert nichts.</p>
       <div class="actions"><button class="btn" data-job="ha_cleanup">Vorschau</button><button class="btn danger" data-job="ha_cleanup_apply">Aufräumen</button></div></div>
+    <div class="panel"><h3>Tracker-Stand sichern</h3><p class="desc">Holt Grundriss, Kartenbezug, Positionen, Höhen, Kalibrierwerte und Feintuning vom MQTT-Broker – das geht auch, wenn der Tracker-Pi ausgefallen ist. <b>Vor</b> dem Neuaufsetzen sichern: Der neue Tracker überschreibt den Stand auf dem Broker. Wiederherstellen schickt die neueste Sicherung an den laufenden Tracker.</p>
+      <label class="check" style="margin:0 0 10px"><input type="checkbox" id="t-restore-cal"><span>Beim Wiederherstellen auch Kalibrierwerte<small>tx_power, n usw. – nur sinnvoll, wenn sich die Positionen seitdem nicht geändert haben.</small></span></label>
+      <div class="actions"><button class="btn primary" data-job="tracker_backup">Sichern</button><button class="btn" data-job="tracker_restore">Wiederherstellen</button></div></div>
     <div class="panel"><h3>ESP32-Werkzeug</h3><p class="desc">PlatformIO baut und flasht die ESP32-Firmware. ${L.pio ? "<b style='color:var(--ok)'>Installiert.</b>" : "<b style='color:var(--warn)'>Nicht installiert.</b>"}</p>
       <div class="actions"><button class="btn ${L.pio ? "" : "primary"}" data-job="install_pio">${L.pio ? "Neu installieren / aktualisieren" : "Installieren"}</button><button class="btn" data-job="esp_provision">Sensor-IDs neu zuweisen</button></div></div>
     <div class="panel"><h3>Übersicht & Prüfung</h3><p class="desc">Konfiguration prüfen bzw. den Status aller Knoten als Text ausgeben.</p>
@@ -1396,7 +1446,7 @@ function renderTools() {
     <div class="panel"><h3>Gemerkte Passwörter</h3><p class="desc">sudo-Passwörter werden nur im Speicher dieser Sitzung gehalten${(L.sudo_remembered || []).length ? ` (derzeit: ${esc(L.sudo_remembered.join(", "))})` : " (derzeit keine)"}.</p>
       <div class="actions"><button class="btn" id="t-forget" ${(L.sudo_remembered || []).length ? "" : "disabled"}>Vergessen</button></div></div>
     <div class="panel"><h3>Konfigurationsdatei</h3><p class="desc">Alle Angaben stehen in <span class="mono">${L.addon ? "addon_configs/local_trilola/fleet.toml" : esc(S.fleet.path)}</span> (mit Passwörtern, ${L.addon ? "per Samba/SSH erreichbar, Teil der HA-Backups" : "nicht im Git"}). Vor jeder Änderung wird <span class="mono">fleet.toml.bak</span> angelegt.</p>
-      <p class="desc" style="margin:0">Repo-Versionen: Pi ${esc(L.versions.pi)}, ESP32 ${esc(L.versions.esp32)}, Shelly ${esc(L.versions.shelly)}, Tracker ${esc(L.versions.tracker)}</p></div>
+      <p class="desc" style="margin:0">Repo-Versionen: Pi ${esc(L.versions.pi)}, ESP32 ${esc(L.versions.esp32)}, Shelly ${esc(L.versions.shelly)}, Tracker ${esc(L.versions.tracker)}${L.versions.app ? `, App ${esc(L.versions.app)}` : ""}${L.app && L.app.version ? ` · diese App: ${esc(L.app.version)}${L.app.installed ? ` (installiert ${esc(L.app.installed)})` : ""}` : ""}</p></div>
   </div>`;
   if (root.dataset.sig !== html) {
     root.innerHTML = html;
@@ -1404,6 +1454,7 @@ function renderTools() {
     root.querySelectorAll("[data-job]").forEach((b) => (b.onclick = () => {
       const j = b.dataset.job;
       if (j === "ha_cleanup_apply") return confirmDialog("Home Assistant aufräumen", "<p>Verwaiste Bluecat-Einträge werden aus Home Assistant und dem Tracker entfernt. Tipp: vorher die Vorschau ansehen.</p>", "Aufräumen", () => startJob("ha_cleanup", null, { apply: true }), true);
+      if (j === "tracker_restore") return confirmDialog("Tracker-Stand wiederherstellen", "<p>Die neueste Sicherung wird an den laufenden Tracker geschickt und ersetzt dort Grundriss, Kartenbezug, Positionen, Höhen und Feintuning.</p>", "Wiederherstellen", () => startJob("tracker_restore", null, { calibration: $("#t-restore-cal").checked }));
       startJob(j, null, {});
     }));
     const u = $("#t-unignore");
@@ -1501,6 +1552,9 @@ const MapView = (() => {
     { key: "door", label: "Tür / Glas (durchlässig)", db: 2, blocking: false },
   ];
   const IMG_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-8 9"/></svg>';
+  const HOT_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3c1 3 4 4.5 4 8.5a4 4 0 0 1-8 0c0-1.6.7-2.8 1.6-3.7.3 1.4 1 2.2 2 2.7C11 8 11.5 5.5 12 3z"/><path d="M5 19h14"/></svg>';
+  const LAYERS_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3 9 5-9 5-9-5 9-5z"/><path d="m3 13 9 5 9-5"/></svg>';
+  const BASE_NAMES = { osm: "Karte", sat: "Satellit", none: "Aus" };
   const CAL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16M6 16l3-8 3 5 3-9 3 12"/></svg>';
   const ROOM_NAMES = ["Wohnzimmer", "Schlafzimmer", "Küche", "Bad", "Flur", "Arbeitszimmer", "Kinderzimmer", "Esszimmer", "Abstellraum", "Balkon", "Garten"];
   const M = {
@@ -1510,8 +1564,9 @@ const MapView = (() => {
     trail: [], layers: {}, base: "osm", fitted: false, auSel: {}, planTimer: null, liveTimer: null,
     show: { plan: true, sensors: true, radio: true, links: false, lola: true, trail: true, cloud: true, grid: true, follow: false, radioLayer: "dynamic", planImage: true, staticInEdit: false },
   };
-  try { const s = JSON.parse(localStorage.getItem("bluecat_map") || "{}"); Object.assign(M.show, s.show || {}); if (s.base) M.base = s.base; } catch (e) {}
-  function persist() { try { localStorage.setItem("bluecat_map", JSON.stringify({ show: M.show, base: M.base })); } catch (e) {} }
+  M.hotView = { style: "cloud", in_cell: 50, out_cell: 10 };
+  try { const s = JSON.parse(localStorage.getItem("bluecat_map") || "{}"); Object.assign(M.show, s.show || {}); if (s.base) M.base = s.base; Object.assign(M.hotView, s.hot || {}); } catch (e) {}
+  function persist() { try { localStorage.setItem("bluecat_map", JSON.stringify({ show: M.show, base: M.base, hot: M.hotView })); } catch (e) {} }
 
   // ---- Koordinaten ------------------------------------------------------------
   function mPerDeg(lat) {
@@ -1572,7 +1627,23 @@ const MapView = (() => {
     const wanted = [M.ref, g.reference, fg.reference].find((id) => id && placed.some((s) => s.id === id));
     if (wanted) return wanted;
     const atZero = placed.find((s) => Math.abs(s.x) < 1 && Math.abs(s.y) < 1);
-    return (atZero || placed[0] || {}).id || null;
+    if (atZero || placed[0]) return (atZero || placed[0]).id;
+    // Noch nichts platziert (z. B. frisch aufgesetzter Tracker): die Referenz aus dem Kartenbezug bleibt Referenz –
+    // sie liegt am lokalen Nullpunkt, an dem auch der gespeicherte Kartenbezug hängt.
+    return [M.ref, g.reference, fg.reference].find((id) => id && sensors().some((s) => s.id === id)) || null;
+  }
+  // Nach „Speichern“ im Kartenbezug gilt der neue Stand, bis der Tracker ihn bestätigt – sonst springt die
+  // Karte kurz auf den alten Bezug zurück, falls das nächste Nachladen vor seiner Antwort kommt.
+  function pendingGeo(fromPlan) {
+    const p = M.geoPending;
+    if (!p) return fromPlan;
+    const same = fromPlan && Math.abs(fromPlan.lat - p.lat) < 2e-7 && Math.abs(fromPlan.lon - p.lon) < 2e-7
+      && Math.abs((((fromPlan.bearing - p.bearing) % 360) + 540) % 360 - 180) < 0.01;
+    if (same || !(M.plan && M.plan.tracker_online)) { M.geoPending = null; return fromPlan; }  // offline: fleet.toml hat den neuen Stand
+    if (Date.now() < p.until) return p;
+    M.geoPending = null;
+    toast("Der Tracker hat den neuen Kartenbezug nicht bestätigt – bitte erneut speichern und das Tracker-Protokoll prüfen.", "err");
+    return fromPlan;
   }
   function geoFromPlan() {
     const g = M.plan && M.plan.georef, fg = M.plan && M.plan.fleet_georef;
@@ -1586,7 +1657,8 @@ const MapView = (() => {
     try {
       M.plan = await api("GET", "/api/plan");
     } catch (e) { M.plan = M.plan || { sensors: [], floorplan: null, mqtt: { connected: false, error: e.message } }; }
-    if (!M.geoDraft) M.geo = geoFromPlan();
+    if (!M.geoDraft) M.geo = pendingGeo(geoFromPlan());
+    if (M.map) applyBase();  // Kacheln erst, wenn der Kartenbezug bekannt ist (beim ersten Laden fehlte er in init)
     M.ref = chooseRef();
     // Bearbeiten ohne ungespeicherte Änderungen: Entwurf auf den neuesten Stand des Trackers bringen
     if (M.mode === "edit" && !M.dirty && !M.drawing) { const sel = M.sel; startDraft(); M.sel = sel && validSel(sel) ? sel : null; }
@@ -1610,16 +1682,18 @@ const MapView = (() => {
     $("#tab-map").innerHTML = `<div class="map-layout">
       <div class="map-wrap"><div id="map"></div>
         <div class="map-bar">
-          <div class="seg" id="mv-mode"><button data-m="live">${ICON.target}Live</button><button data-m="edit">${ICON.edit}Bearbeiten</button><button data-m="image">${IMG_ICON}Bild</button><button data-m="cal">${CAL_ICON}Kalibrieren</button><button data-m="geo">${ICON.link}Kartenbezug</button></div>
+          <div class="seg" id="mv-mode">${[["live", ICON.target, "Live"], ["edit", ICON.edit, "Bearbeiten"], ["image", IMG_ICON, "Bild"], ["cal", CAL_ICON, "Kalibrieren"], ["geo", ICON.link, "Kartenbezug"], ["hot", HOT_ICON, "Hotspots"]]
+            .map(([m, icon, label]) => `<button data-m="${m}" title="${label}" aria-label="${label}">${icon}<span class="lbl">${label}</span></button>`).join("")}</div>
           <div class="seg hidden" id="mv-tools">
             <button data-t="select" title="Auswählen und verschieben">Auswahl</button>
-            <button data-t="rect" title="Rechteckigen Raum aufziehen: zwei Ecken klicken">Raum ▭</button>
-            <button data-t="poly" title="Raum als Vieleck: Ecken klicken, Enter oder erster Punkt schließt">Raum ⬠</button>
+            <button data-t="rect" title="Rechteckigen Raum aufziehen: zwei Ecken klicken"><span class="lbl">Raum </span>▭</button>
+            <button data-t="poly" title="Raum als Vieleck: Ecken klicken, Enter oder erster Punkt schließt"><span class="lbl">Raum </span>⬠</button>
             <button data-t="wall" title="Wand: Anfang und Ende klicken, Esc beendet">Wand</button>
           </div>
           <div class="seg hidden" id="mv-undo"><button data-u="1" title="Rückgängig (Strg+Z)">↶</button></div>
-          <div style="flex:1"></div>
+          <div class="spacer" style="flex:1"></div>
           <div class="seg" id="mv-base"><button data-b="osm">Karte</button><button data-b="sat">Satellit</button><button data-b="none">Aus</button></div>
+          <div class="seg" id="mv-base1"><button data-b1="1" title="Hintergrund wechseln" aria-label="Hintergrund wechseln">${LAYERS_ICON}<span id="mv-base1-l"></span></button></div>
         </div>
         <div class="map-banner" id="mv-banner"></div>
         <div class="map-hint" id="mv-hint"></div>
@@ -1633,8 +1707,11 @@ const MapView = (() => {
     };
     M.canvas = L.canvas({ padding: 0.3 });
     map.createPane("planImage").style.zIndex = 250;  // über den Kacheln, unter Grundriss und Markern
+    map.createPane("hotPane").style.zIndex = 350;    // Hotspots: über dem Bild, unter Wänden und Markern
+    map.getPane("hotPane").style.pointerEvents = "none";
     defineImageLayer();
-    for (const k of ["grid", "radio", "links", "rooms", "walls", "draft", "handles", "cloud", "trail", "lola", "cal", "sensors", "imgHandles"]) M.layers[k] = L.layerGroup().addTo(map);
+    M.hotLayer = new HotLayer().addTo(map);
+    for (const k of ["hot", "grid", "radio", "links", "rooms", "walls", "draft", "handles", "cloud", "trail", "lola", "cal", "sensors", "imgHandles"]) M.layers[k] = L.layerGroup().addTo(map);
     map.setView([0, 0], 20);
     map.on("click", onMapClick);
     map.on("mousemove", onMapMove);
@@ -1644,6 +1721,12 @@ const MapView = (() => {
     $("#mv-tools").querySelectorAll("button").forEach((b) => (b.onclick = () => setTool(b.dataset.t)));
     $("#mv-undo").querySelector("button").onclick = undo;
     $("#mv-base").querySelectorAll("button").forEach((b) => (b.onclick = () => { M.base = b.dataset.b; persist(); applyBase(); }));
+    $("#mv-base1 button").onclick = () => { const order = ["osm", "sat", "none"]; M.base = order[(order.indexOf(M.base) + 1) % order.length]; persist(); applyBase(); };
+    // schmale Karte erkennen (Handy, HA-App-Seitenleiste): dann kompakte Leiste
+    const wrap = $("#tab-map .map-wrap");
+    const narrow = () => { const w = wrap.clientWidth; if (w) wrap.classList.toggle("narrow", w < 720); };
+    if (window.ResizeObserver) new ResizeObserver(narrow).observe(wrap);
+    window.addEventListener("resize", narrow); narrow();
     applyBase();
     setMode("live", true);
   }
@@ -1655,6 +1738,8 @@ const MapView = (() => {
       if (!on && M.map.hasLayer(layer)) M.map.removeLayer(layer);
     }
     $("#mv-base").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.b === M.base));
+    const b1 = $("#mv-base1-l"); if (b1) b1.textContent = ({ osm: "Karte", sat: "Sat.", none: "Aus" })[M.base] || "";
+    const bb = $("#mv-base1 button"); if (bb) bb.title = `Hintergrund: ${BASE_NAMES[M.base] || ""} – tippen zum Wechseln`;
   }
 
   function onTab(visible) {
@@ -1700,6 +1785,7 @@ const MapView = (() => {
     $("#mv-undo").classList.toggle("hidden", mode !== "edit");
     if (mode === "edit") startDraft();
     if (mode === "geo") startGeo();
+    if (mode === "hot") loadHot(); else clearTimeout(M.hotTimer);
     setTool("select");
     if (mode === "live") tickLive(); else clearTimeout(M.liveTimer);
     applyBase();
@@ -1727,12 +1813,153 @@ const MapView = (() => {
       wall: "Wand: Anfang und Ende klicken, weitere Klicks setzen die Wand fort · Esc beendet · Umschalt = rechtwinklig.",
     };
     if (M.placing) return (el.textContent = `Klicke auf die Stelle, an der ${nameOf(M.placing)} steht.`);
+    if (M.mode === "hot") return (el.textContent = M.hotView.style === "cluster" ? "Cluster: Kreisgröße und Farbe = Aufenthaltsdauer · Kreis anklicken zum Hineinzoomen." : "Wärmekarte: je röter, desto länger war Lola dort · Lieblingsplatz rechts anklicken zum Hinspringen.");
     if (M.mode === "geo") return (el.textContent = "Referenz-Marker auf die richtige Stelle ziehen, dann Ausrichtung drehen, bis der Grundriss passt.");
     if (M.mode === "image") return imgMeta() ? imageHint() : (el.textContent = "Grundriss-Bild rechts hochladen.");
     if (M.mode === "cal") return (el.textContent = M.calAdding ? "Auf die Stelle klicken, an der gemessen werden soll · Esc bricht ab" : "Messpunkt anklicken zum Messen · offene Punkte lassen sich verschieben.");
     el.textContent = M.mode === "edit" ? t[M.tool] : "";
   }
   function nameOf(id) { const s = sensors().find((x) => x.id === id); return s ? s.name : id; }
+
+  // ---- Positionen als CSV (SweetHome3D-Import, TriLola-Export) ---------------------------
+  // Reine Funktionen ohne DOM – test_gui.py prüft sie mit Node.
+  // SweetHome3D: Möbelliste → „Möbel → Als CSV-Format exportieren“ mit den Spalten Name, X, Y und
+  // „Höhe über Boden“ (Elevation). X/Y in cm, y zeigt dort nach UNTEN; Tab- oder ;-getrennt, deutsches Zahlformat.
+  const CSV_ELEV_KEYS = ["hoehe ueber boden", "hoehe ueber dem boden", "elevation", "erhoehung", "hoehe ueber fussboden"];
+  const CSV_CAL_RE = /kalib|calib|messpunkt/;
+  function csvKey(s) {
+    return String(s ?? "").toLowerCase().replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss")
+      .replace(/[^a-z0-9]+/g, " ").trim();
+  }
+  function csvSplitLine(line, sep) {
+    const out = []; let cur = "", quoted = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (quoted) { if (c === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else quoted = false; } else cur += c; }
+      else if (c === '"') quoted = true;
+      else if (c === sep) { out.push(cur); cur = ""; }
+      else cur += c;
+    }
+    out.push(cur);
+    return out.map((s) => s.trim());
+  }
+  // comma = Dezimalkomma (Punkte sind dann Tausendertrenner: „1.003,4“ = 1003,4)
+  function csvNumber(text, comma) {
+    let t = String(text ?? "").trim().replace(/[\s ']/g, "").replace(/[−–]/g, "-");
+    if (!t) return null;
+    t = comma ? t.replace(/\./g, "").replace(",", ".") : t.replace(/,/g, "");
+    const n = Number(t);
+    return Number.isFinite(n) ? n : NaN;
+  }
+  function parsePositionsCsv(text) {
+    const lines = String(text || "").replace(/^﻿/, "").split(/\r?\n/).filter((l) => l.trim());
+    if (lines.length < 2) return { error: "Die Datei enthält keine Zeilen." };
+    const head = lines[0];
+    const sep = ["\t", ";", ","].map((c) => [c, head.split(c).length]).sort((a, b) => b[1] - a[1])[0][0];
+    const keys = csvSplitLine(head, sep).map(csvKey);
+    const data = lines.slice(1).map((l) => csvSplitLine(l, sep));
+    const col = (...names) => keys.findIndex((k) => names.includes(k));
+    if (col("id") >= 0 && col("rechts m") >= 0 && col("oben m") >= 0) {
+      // eigener Export: Typ;ID;Name;rechts_m;oben_m;hoehe_ueber_boden_m (Meter relativ zur Referenz, y nach oben)
+      const [ct, ci, cn, cx, cy, ch] = [col("typ"), col("id"), col("name"), col("rechts m"), col("oben m"), col("hoehe ueber boden m")];
+      const comma = sep !== "," && data.some((r) => [cx, cy, ch].some((c) => c >= 0 && /\d,\d/.test(r[c] || "")));
+      const rows = data.map((r) => ({
+        kind: CSV_CAL_RE.test(csvKey(r[ct])) ? "cal" : "sensor", id: r[ci] || "", name: cn >= 0 ? r[cn] || "" : "",
+        dx: csvNumber(r[cx], comma), dy: csvNumber(r[cy], comma), h: ch >= 0 ? csvNumber(r[ch], comma) : undefined,
+      }));
+      return { format: "trilola", rows };
+    }
+    const [cn, cx, cy] = [col("name"), col("x"), col("y")];
+    if (cn < 0 || cx < 0 || cy < 0) return { error: "Spalten Name, X und Y fehlen. In SweetHome3D unter Möbel die Spalten X, Y und „Höhe über Boden“ einblenden und erneut exportieren." };
+    const ce = col(...CSV_ELEV_KEYS);
+    const comma = sep !== "," && (data.some((r) => [cx, cy, ce].some((c) => c >= 0 && /\d,\d/.test(r[c] || "")))
+      || keys.some((k) => /breite|tiefe|hoehe/.test(k)));
+    const rows = [];
+    for (const r of data) {
+      const x = csvNumber(r[cx], comma), y = csvNumber(r[cy], comma);
+      if (x == null || y == null || Number.isNaN(x) || Number.isNaN(y)) continue;
+      const e = ce >= 0 ? csvNumber(r[ce], comma) : null;
+      rows.push({ name: r[cn] || "", x, y, elev: e == null || Number.isNaN(e) ? null : e });
+    }
+    if (!rows.length) return { error: "Keine Zeile mit gültigen X/Y-Werten gefunden." };
+    return { format: "sh3d", rows, hasElevation: ce >= 0 };
+  }
+  // Namen aus der CSV den Geräten zuordnen: gemeinsame Wörter (auch Anfänge/Tippfehler), seltene Wörter zählen mehr.
+  function csvTokens(s) { return csvKey(s).split(" ").filter((t) => t.length >= 2); }
+  function csvMatchScore(rowTokens, sensorTokens, weight) {
+    let score = 0; const used = new Set();
+    for (const t of rowTokens) {
+      let best = 0, bestTok = null;
+      for (const u of sensorTokens) {
+        let s = 0;
+        if (t === u) s = 3;
+        else if (Math.min(t.length, u.length) >= 3 && (t.startsWith(u) || u.startsWith(t))) s = 2;
+        else { let k = 0; while (k < t.length && k < u.length && t[k] === u[k]) k++; if (k >= 5) s = 1.5; }
+        if (s * (weight[u] || 1) > best) { best = s * (weight[u] || 1); bestTok = u; }
+      }
+      if (bestTok) { score += best; used.add(bestTok); }
+    }
+    return score - 0.01 * sensorTokens.filter((u) => !used.has(u)).length;
+  }
+  function matchCsvNames(names, sensorList) {
+    const toks = sensorList.map((s) => [...new Set(csvTokens(`${s.name || ""} ${s.id}`))]);
+    const count = {};
+    toks.forEach((ts) => ts.forEach((t) => (count[t] = (count[t] || 0) + 1)));
+    const weight = Object.fromEntries(Object.entries(count).map(([t, c]) => [t, 1 / c]));
+    const pairs = [];
+    names.forEach((n, i) => {
+      if (CSV_CAL_RE.test(csvKey(n))) return;
+      const rt = csvTokens(n);
+      sensorList.forEach((s, j) => {
+        const exact = csvKey(n) === csvKey(s.name) || csvKey(n) === csvKey(s.id);
+        const sc = exact ? 100 : csvMatchScore(rt, toks[j], weight);
+        if (sc >= 1.5) pairs.push([sc, i, j]);
+      });
+    });
+    pairs.sort((a, b) => b[0] - a[0]);
+    const out = names.map(() => null), taken = new Set();
+    for (const [, i, j] of pairs) if (out[i] == null && !taken.has(j)) { out[i] = sensorList[j].id; taken.add(j); }
+    return out;
+  }
+  // Tabellenzeilen aus einem Import. target: Geräte-ID, "cal" (Kalibrierpunkt) oder "" (ignorieren)
+  function csvImportRows(parsed, sensorList, refId) {
+    if (parsed.format === "trilola") {
+      const ids = new Set(sensorList.map((s) => s.id));
+      const byName = matchCsvNames(parsed.rows.map((r) => (r.kind === "sensor" && !ids.has(r.id) ? r.name : "")), sensorList);
+      return parsed.rows.map((r, i) => ({
+        src: r.name || r.id, target: r.kind === "cal" ? "cal" : ids.has(r.id) ? r.id : byName[i] || "",
+        calId: r.kind === "cal" && /^[A-Za-z0-9_-]{1,32}$/.test(r.id) ? r.id : null,
+        label: r.kind === "cal" ? r.name : "", dx: r.dx, dy: r.dy, h: r.h,
+      }));
+    }
+    const match = matchCsvNames(parsed.rows.map((r) => r.name), sensorList);
+    const rows = parsed.rows.map((r, i) => {
+      const cal = CSV_CAL_RE.test(csvKey(r.name));
+      return { src: r.name, target: cal ? "cal" : match[i] || "", calId: null, label: cal ? "" : r.name,
+        raw: [r.x, r.y], h: parsed.hasElevation ? (r.elev == null ? null : r.elev / 100) : undefined };
+    });
+    csvRelativeTo(rows, refId);
+    return rows;
+  }
+  // SweetHome3D-Koordinaten → Meter relativ zur Zeile der Referenz (y umgedreht). false: Referenz fehlt.
+  function csvRelativeTo(rows, refId) {
+    const anchor = rows.find((r) => r.target === refId && r.raw);
+    for (const r of rows) {
+      if (!r.raw) continue;
+      r.dx = anchor ? Math.round(r.raw[0] - anchor.raw[0]) / 100 + 0 : null;   // + 0: kein „−0“
+      r.dy = anchor ? Math.round(anchor.raw[1] - r.raw[1]) / 100 + 0 : null;
+    }
+    return !!anchor;
+  }
+  function csvCell(v) { const s = String(v ?? ""); return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; }
+  function csvDecimal(v) { return v == null || v === "" || !Number.isFinite(+v) ? "" : (+v).toFixed(2).replace(".", ","); }
+  // Export für Excel (deutsch): Semikolon, Dezimalkomma, BOM. Lässt sich wieder importieren.
+  function positionsCsv(rows) {
+    const lines = [["Typ", "ID", "Name", "rechts_m", "oben_m", "hoehe_ueber_boden_m"].join(";")];
+    for (const r of rows) lines.push([r.kind === "cal" ? "Kalibrierpunkt" : "Gerät", r.id, r.name, csvDecimal(r.dx), csvDecimal(r.dy), csvDecimal(r.h)].map(csvCell).join(";"));
+    return "﻿" + lines.join("\r\n") + "\r\n";
+  }
+  // ---- Ende CSV -------------------------------------------------------------------------
 
   // ---- Entwurf (Bearbeiten) --------------------------------------------------------
   function startDraft() {
@@ -1766,11 +1993,205 @@ const MapView = (() => {
         if (heightsSupported()) await api("POST", "/api/plan/heights", { heights: hts });
         else toast("Höhen nicht gespeichert – der Tracker braucht Version 2.3 (Tracker-Pi aktualisieren).", "err");
       }
+      if (M.draft.calPlan) {
+        if (M.draft.clearCal) await api("POST", "/api/calibration", { cmd: "clear" });
+        const r = await api("POST", "/api/plan/calibration-plan", { points: M.draft.calPlan });
+        M.calPlan = r.points; if (M.plan) M.plan.cal_plan = r.points;
+        delete M.draft.calPlan; delete M.draft.clearCal;
+      }
       toast("Gespeichert – der Tracker übernimmt es sofort.", "ok");
       M.dirty = false; M.undo = [];
       renderSide();
       setTimeout(loadPlan, 1500);  // baut den Entwurf neu auf, sofern inzwischen nichts geändert wurde
     } catch (e) { toast(e.message, "err"); }
+  }
+
+  // ---- Positionen als Tabelle (Import/Export) -----------------------------------------
+  // Zeile: { src, target (Geräte-ID | "cal" | ""), calId, label, dx, dy (m relativ zur Referenz), h (m | null | undefined), raw? }
+  function currentTableRows() {
+    const rows = sensors().map((s) => {
+      const p = sensorPos(s), h = sensorHeight(s);
+      const [dx, dy] = p ? rel(p[0], p[1]) : [null, null];
+      return { src: s.name, target: s.id, calId: null, label: "", dx: p ? Math.round(dx * 100) / 100 + 0 : null, dy: p ? Math.round(dy * 100) / 100 + 0 : null, h: h.set ? h.cm / 100 : null };
+    });
+    const plan = (editing() && M.draft.calPlan) || calPlan();
+    for (const c of plan) {
+      const [dx, dy] = rel(c.x, c.y);
+      rows.push({ src: c.label || "Kalibrierpunkt", target: "cal", calId: c.id, label: c.label || "", dx: Math.round(dx * 100) / 100 + 0, dy: Math.round(dy * 100) / 100 + 0, h: c.z != null ? c.z / 100 : null });
+    }
+    return rows;
+  }
+  function exportRows(rows) {
+    return rows.filter((r) => r.target).map((r) => r.target === "cal"
+      ? { kind: "cal", id: r.calId || "", name: r.label || r.src || "", dx: r.dx, dy: r.dy, h: r.h }
+      : { kind: "sensor", id: r.target, name: nameOf(r.target), dx: r.target === M.ref ? 0 : r.dx, dy: r.target === M.ref ? 0 : r.dy, h: r.h });
+  }
+  function downloadCsv(rows) {
+    const blob = new Blob([positionsCsv(exportRows(rows))], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = "trilola_positionen.csv";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }
+  async function importPositionsFile(file) {
+    if (!file) return;
+    if (file.size > 2e6) return toast("Die Datei ist zu groß für eine Positionsliste.", "err");
+    let text = await file.text();
+    if (text.includes("�")) {  // kein UTF-8 → Windows-Zeichensatz (Excel)
+      try { text = new TextDecoder("windows-1252").decode(await file.arrayBuffer()); } catch (e) {}
+    }
+    const parsed = parsePositionsCsv(text);
+    if (parsed.error) return toast(parsed.error, "err");
+    if (!M.ref) {
+      // Weder platzierte Geräte noch Referenz im Kartenbezug: das Gerät am Nullpunkt der Datei wird Referenz
+      // (SweetHome3D: am nächsten an X/Y = 0; eigener Export: die Zeile mit 0 | 0).
+      const ids = matchCsvNames(parsed.rows.map((r) => r.name || r.id || ""), sensors());
+      const known = new Set(sensors().map((s) => s.id));
+      const cand = parsed.rows.map((r, i) => ({ id: parsed.format === "trilola" && known.has(r.id) ? r.id : ids[i],
+        d: parsed.format === "sh3d" ? Math.hypot(r.x, r.y) : Math.hypot(r.dx || 0, r.dy || 0) }))
+        .filter((c) => c.id);
+      const best = cand.sort((a, b) => a.d - b.d)[0];
+      if (best) { M.ref = best.id; toast(`${nameOf(best.id)} wird Referenz (Nullpunkt).`, "ok"); }
+    }
+    const order = Object.fromEntries(sensors().map((s, i) => [s.id, i + 1]));
+    const rank = (r) => (r.target === M.ref ? 0 : order[r.target] || (r.target === "cal" ? 1000 : 2000));
+    const rows = csvImportRows(parsed, sensors(), M.ref).map((r, i) => [r, i]).sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1]).map(([r]) => r);
+    const n = rows.filter((r) => r.target && r.target !== "cal").length, k = rows.filter((r) => r.target === "cal").length;
+    openPosTable(rows, { imported: true, format: parsed.format, file: file.name, hasHeights: parsed.format === "trilola" || parsed.hasElevation });
+    toast(`${n} Geräte und ${k} Kalibrierpunkte erkannt – bitte die Zuordnung prüfen.`, "ok");
+  }
+  function posTableProblems(rows) {
+    const seen = {}, bad = new Set(), msgs = [];
+    rows.forEach((r, i) => {
+      if (!r.target) return;
+      if (r.target !== "cal") {
+        if (seen[r.target] != null) { bad.add(i); bad.add(seen[r.target]); msgs.push(`${nameOf(r.target)} ist mehrfach zugeordnet.`); }
+        seen[r.target] = i;
+      }
+      const isRef = r.target === M.ref;
+      const partial = (r.dx == null) !== (r.dy == null);
+      if (!isRef && ((r.target === "cal" && (r.dx == null || r.dy == null)) || partial || Number.isNaN(r.dx) || Number.isNaN(r.dy))) { bad.add(i); msgs.push(`${r.label || r.src || nameOf(r.target)}: Position unvollständig.`); }
+      if (r.h != null && (Number.isNaN(r.h) || r.h < 0 || r.h > 6)) { bad.add(i); msgs.push(`${r.label || r.src || nameOf(r.target)}: Höhe bitte zwischen 0 und 6 m.`); }
+    });
+    return { bad, msgs: [...new Set(msgs)] };
+  }
+  function openPosTable(rows, opt = {}) {
+    const T = { rows, opt, showAll: false };
+    const refName = nameOf(M.ref) || "–";
+    const hasCal = () => T.rows.some((r) => r.target === "cal");
+    const measured = calState().points.length;
+    const fmt = (v) => (v == null || Number.isNaN(v) ? "" : (+v).toFixed(2).replace(".", ",").replace(/^-0,00$/, "0,00"));
+    const numIn = (i, f, v, dis) => `<input type="text" inputmode="decimal" data-i="${i}" data-f="${f}" value="${fmt(v)}" ${dis ? "disabled" : ""}>`;
+    const options = (r) => [`<option value="">– ignorieren –</option>`, `<option value="cal" ${r.target === "cal" ? "selected" : ""}>Kalibrierpunkt</option>`]
+      .concat(sensors().map((s) => `<option value="${esc(s.id)}" ${r.target === s.id ? "selected" : ""}>${esc(s.name)}${s.id === M.ref ? " (Referenz)" : ""}</option>`)).join("");
+    const body = () => {
+      const { bad, msgs } = posTableProblems(T.rows);
+      const anchored = !opt.imported || opt.format !== "sh3d" || T.rows.some((r) => r.target === M.ref && r.raw);
+      const hidden = T.rows.filter((r) => opt.imported && !T.showAll && !r.target).length;
+      const trs = T.rows.map((r, i) => {
+        if (opt.imported && !T.showAll && !r.target && !r.touched) return "";
+        const isRef = r.target === M.ref, s = sensors().find((x) => x.id === r.target);
+        const ph = r.target === "cal" ? "Halsband" : s ? "Std. " + mStr(defaultHeight(s)) : "";
+        return `<tr class="${r.target ? "" : "off"} ${bad.has(i) ? "bad" : ""}">
+          ${opt.imported ? `<td class="src keep" title="${esc(r.src)}">${esc(r.src)}</td>` : ""}
+          <td class="keep">${opt.imported ? `<select data-i="${i}" data-f="target">${options(r)}</select>` : `<b>${r.target === "cal" ? "Kalibrierpunkt" : esc(nameOf(r.target))}</b>${isRef ? ' <span class="muted">(Referenz)</span>' : ""}`}</td>
+          <td>${r.target === "cal" ? `<input type="text" data-i="${i}" data-f="label" value="${esc(r.label || "")}" maxlength="40" placeholder="z. B. Sofa">` : `<span class="muted">${isRef ? "Nullpunkt" : ""}</span>`}</td>
+          <td class="num">${numIn(i, "dx", isRef ? 0 : r.dx, isRef)}</td><td class="num">${numIn(i, "dy", isRef ? 0 : r.dy, isRef)}</td>
+          <td class="num">${r.h === undefined ? `<input type="text" disabled placeholder="unverändert">` : `<input type="text" inputmode="decimal" data-i="${i}" data-f="h" value="${fmt(r.h)}" placeholder="${esc(ph)}">`}</td>
+          <td>${r.target === "cal" && !opt.imported ? `<button class="btn sm icon ghost" data-rm="${i}" title="Punkt entfernen">${ICON.err}</button>` : ""}</td></tr>`;
+      }).join("");
+      return `<p>Alle Werte in Metern relativ zur Referenz <b>${esc(refName)}</b>: rechts (+) / links (−), oben (+) / unten (−) – wie im Bearbeiten-Modus. Höhe über Boden = Antenne bzw. Halsband über dem Fußboden, leer = Standard.${opt.imported ? ` Quelle: <span class="mono">${esc(opt.file || "")}</span>${opt.format === "sh3d" ? " (SweetHome3D, y-Achse umgedreht)" : ""}.` : ""}</p>
+        ${!anchored ? `<div class="notice warn" style="margin:0 0 10px"><div>Keine Zeile ist der Referenz <b>${esc(refName)}</b> zugeordnet – ohne sie lassen sich die SweetHome3D-Koordinaten nicht umrechnen. Bitte die passende Zeile auf „${esc(refName)}“ stellen.</div></div>` : ""}
+        ${msgs.length ? `<div class="notice err" style="margin:0 0 10px"><div>${msgs.map(esc).join("<br>")}</div></div>` : ""}
+        <div class="pos-wrap"><table class="plain pos-table"><thead><tr>${opt.imported ? "<th>In der Datei</th>" : ""}<th>Zuordnung</th><th>Bezeichnung</th><th>rechts/links m</th><th>oben/unten m</th><th>Höhe über Boden m</th><th></th></tr></thead><tbody>${trs}</tbody></table></div>
+        <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin:0 0 6px">
+          ${opt.imported ? `<label class="check" style="margin:0"><input type="checkbox" data-all ${T.showAll ? "checked" : ""}><span>Alle Zeilen der Datei zeigen${hidden ? ` (${hidden} ausgeblendet)` : ""}</span></label>` : `<button class="btn sm" data-addcal>Kalibrierpunkt hinzufügen</button>`}
+          ${measured && hasCal() ? `<label class="check" style="margin:0"><input type="checkbox" data-clearcal ${T.clearCal ? "checked" : ""}><span>Bisherige ${measured} Kalibriermessungen löschen<small>Sinnvoll, wenn sich die Positionen deutlich ändern – alte Messungen passen dann nicht mehr.</small></span></label>` : ""}
+        </div>
+        ${opt.imported && !hasCal() ? `<p class="desc" style="margin:4px 0 0">Keine Kalibrierpunkte in der Datei – der bisherige Kalibrierplan bleibt.</p>` : ""}`;
+    };
+    const dlg = modal({
+      title: opt.imported ? "Positionen importieren" : "Positionen als Tabelle",
+      body: `<div data-body></div>`, wide: true,
+      foot: `<button class="btn left" data-export>${ICON.down}CSV exportieren</button><button class="btn" data-close>Abbrechen</button><button class="btn primary" data-ok>In den Plan übernehmen</button>`,
+      onMount: (el, close) => {
+        el.querySelector(".modal").classList.add("xwide");
+        const box = el.querySelector("[data-body]");
+        const paint = () => {
+          box.innerHTML = body();
+          const { bad } = posTableProblems(T.rows);
+          const anchored = !opt.imported || opt.format !== "sh3d" || T.rows.some((r) => r.target === M.ref && r.raw);
+          el.querySelector("[data-ok]").disabled = bad.size > 0 || !anchored;
+        };
+        box.addEventListener("change", (e) => {
+          const t = e.target;
+          if (t.matches("[data-all]")) { T.showAll = t.checked; return paint(); }
+          if (t.matches("[data-clearcal]")) { T.clearCal = t.checked; return; }
+          const r = T.rows[+t.dataset.i];
+          if (!r) return;
+          const f = t.dataset.f;
+          if (f === "target") {
+            const wasRef = r.target === M.ref;
+            r.target = t.value; r.touched = true;
+            if (r.target === "cal" && !r.label && r.src && !CSV_CAL_RE.test(csvKey(r.src))) r.label = r.src.slice(0, 40);
+            if ((wasRef || r.target === M.ref) && opt.format === "sh3d" && csvRelativeTo(T.rows, M.ref)) toast("Alle Werte neu auf die Referenz umgerechnet.", "ok");
+          } else if (f === "label") r.label = t.value.trim().slice(0, 40);
+          else { const v = parseM(t.value); r[f] = v == null ? null : Number.isNaN(v) ? NaN : v / 100; }
+          paint();
+        });
+        box.addEventListener("click", (e) => {
+          const rm = e.target.closest("[data-rm]"); if (rm) { T.rows.splice(+rm.dataset.rm, 1); return paint(); }
+          if (e.target.closest("[data-addcal]")) { T.rows.push({ src: "", target: "cal", calId: null, label: "", dx: null, dy: null, h: null }); paint(); }
+        });
+        el.querySelector("[data-export]").onclick = () => downloadCsv(T.rows);
+        el.querySelector("[data-ok]").onclick = () => { if (applyPosTable(T)) close(); };
+        paint();
+      },
+    });
+    return dlg;
+  }
+  function applyPosTable(T) {
+    const { bad, msgs } = posTableProblems(T.rows);
+    if (bad.size) { toast(msgs[0] || "Bitte die markierten Zeilen prüfen.", "err"); return false; }
+    if (M.mode !== "edit") setMode("edit");
+    if (!M.draft) startDraft();
+    snapshot();
+    const [rx, ry] = refPos();
+    let moved = 0, hts = 0;
+    for (const r of T.rows) {
+      if (!r.target || r.target === "cal") continue;
+      const s = sensors().find((x) => x.id === r.target);
+      if (!s) continue;
+      if (r.target === M.ref && !sensorPos(s)) { M.draft.positions[s.id] = [Math.round(rx), Math.round(ry)]; moved++; }
+      if (r.target !== M.ref && r.dx != null && r.dy != null) {
+        const p = [Math.round(rx + r.dx * 100), Math.round(ry + r.dy * 100)], old = sensorPos(s);
+        if (!old || Math.hypot(old[0] - p[0], old[1] - p[1]) >= 0.5) { M.draft.positions[s.id] = p; moved++; }
+      }
+      if (r.h !== undefined) {
+        const h = sensorHeight(s), want = r.h == null ? null : Math.round(r.h * 1000) / 10;
+        if ((want == null) !== !h.set || (want != null && Math.abs(want - h.cm) >= 0.5)) { M.draft.heights[s.id] = { height_cm: want }; hts++; }
+      }
+    }
+    const cals = T.rows.filter((r) => r.target === "cal");
+    if (cals.length || !T.opt.imported) {
+      const prev = calPlan(), used = new Set();
+      M.draft.calPlan = cals.map((r, i) => {
+        let id = r.calId && !used.has(r.calId) ? r.calId : null;
+        if (!id) id = "k" + Date.now().toString(36) + i;
+        used.add(id);
+        const x = Math.round(rx + r.dx * 100), y = Math.round(ry + r.dy * 100);
+        const p = { id, x, y, label: r.label || roomAt(x, y) || `Punkt ${i + 1}` };
+        if (r.h != null) p.z = Math.round(r.h * 1000) / 10;
+        return p;
+      });
+      if (JSON.stringify(M.draft.calPlan) === JSON.stringify(prev)) delete M.draft.calPlan;
+      else if (T.clearCal) M.draft.clearCal = true;
+    }
+    M.dirty = true;
+    drawAll(); renderSide();
+    const parts = [`${moved} Positionen`, `${hts} Höhen`].concat(M.draft.calPlan ? [`${M.draft.calPlan.length} Kalibrierpunkte`] : []);
+    toast(`${parts.join(", ")} übernommen – auf der Karte prüfen und dann „Speichern“.`, "ok");
+    return true;
   }
 
   // ---- Kartenbezug ----------------------------------------------------------------
@@ -1802,6 +2223,7 @@ const MapView = (() => {
       const r = await api("POST", "/api/plan/georef", { lat: M.geoDraft.lat, lon: M.geoDraft.lon, bearing_deg: M.geoDraft.bearing, reference: M.ref, reference_lat: +ll.lat.toFixed(8), reference_lon: +ll.lng.toFixed(8) });
       toast(r.published ? "Kartenbezug gespeichert und an den Tracker gesendet." : "In fleet.toml gespeichert – der Tracker ist offline und übernimmt es beim nächsten Rollout.", r.published ? "ok" : "");
       M.geo = { lat: M.geoDraft.lat, lon: M.geoDraft.lon, bearing: M.geoDraft.bearing };
+      M.geoPending = r.published ? { ...M.geo, until: Date.now() + 30000 } : null;
       M.geoDraft = null;
       setMode("live");
       setTimeout(loadPlan, 1500);
@@ -1825,7 +2247,7 @@ const MapView = (() => {
   // ---- Zeichnen ----------------------------------------------------------------------
   function drawAll() {
     if (!M.map) return;
-    drawImage(); drawGrid(); drawRadio(); drawPlan(); drawSensors(); drawLola(); drawDraftPreview(); drawCal();
+    drawImage(); drawGrid(); drawRadio(); drawPlan(); drawSensors(); drawLola(); drawDraftPreview(); drawCal(); drawHot();
     const none = geo().none;
     $("#mv-banner").innerHTML = none ? `<div class="notice info" style="margin:0"><div class="grow"><b>Noch kein Kartenbezug.</b> Grundriss und Geräte lassen sich trotzdem bearbeiten. Für die Karte darunter: Modus <b>Kartenbezug</b> → Adresse suchen → Referenz-Marker platzieren.</div></div>` : "";
   }
@@ -1841,7 +2263,7 @@ const MapView = (() => {
   }
   function drawGrid() {
     const g = M.layers.grid; g.clearLayers();
-    if (!M.show.grid || M.mode === "live") return;
+    if (!M.show.grid || M.mode === "live" || M.mode === "hot") return;
     const [x0, y0, x1, y1] = bounds();
     const [rx, ry] = refPos();
     const step = cmPerPixel() > 8 ? 500 : 100;
@@ -1859,7 +2281,8 @@ const MapView = (() => {
     const g = M.layers.radio, gl = M.layers.links; g.clearLayers(); gl.clearLayers();
     const rm = radioMap();
     if (!rm) return;
-    const layer = M.mode === "live" ? M.show.radioLayer : M.mode === "edit" && M.show.staticInEdit ? "static" : "off";
+    // Kartenbezug: die Funkkarte mit anzeigen, damit sie sichtbar mitwandert
+    const layer = M.mode === "live" || M.mode === "geo" ? M.show.radioLayer : M.mode === "edit" && M.show.staticInEdit ? "static" : "off";
     const rows = layer === "static" ? rm.static : layer === "dynamic" ? (rm.dynamic || rm.values) : null;
     if (rows) {
       const c = rm.cell_cm, [ox, oy] = rm.origin_cm;
@@ -1934,7 +2357,7 @@ const MapView = (() => {
   function liveSensor(id) { return (M.live && M.live.sensors && M.live.sensors[id]) || {}; }
   function drawSensors() {
     const g = M.layers.sensors; g.clearLayers();
-    if (!M.show.sensors && M.mode === "live") return;
+    if ((!M.show.sensors && M.mode === "live") || M.mode === "hot") return;
     const zoomLabels = !M.map || cmPerPixel() < 6;
     for (const s of sensors()) {
       const p = sensorPos(s);
@@ -1969,6 +2392,37 @@ const MapView = (() => {
       }
       mk.addTo(g);
       s._marker = mk;
+    }
+    layoutLabels();
+  }
+  // Beschriftungen so legen, dass sie sich nicht gegenseitig oder fremde Punkte verdecken:
+  // je Label mehrere Lagen um den Punkt ausprobieren, die mit der geringsten Überdeckung gewinnt.
+  function layoutLabels() {
+    if (!M.map) return;
+    const items = [];
+    for (const s of sensors()) {
+      const el = s._marker && M.layers.sensors.hasLayer(s._marker) && s._marker.getElement();
+      if (!el) continue;
+      const lab = el.querySelector(".mk-label");
+      items.push({ s, p: M.map.latLngToContainerPoint(s._marker.getLatLng()), lab, w: lab ? lab.offsetWidth : 0, h: lab ? lab.offsetHeight : 0 });
+    }
+    const R = 9;  // Punkt samt Rand
+    const boxes = items.map((it) => ({ x0: it.p.x - R, y0: it.p.y - R, x1: it.p.x + R, y1: it.p.y + R }));
+    const overlap = (a, b) => Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)) * Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0));
+    const order = items.filter((it) => it.lab && it.w).sort((a, b) => (b.s.id === M.ref) - (a.s.id === M.ref) || a.p.y - b.p.y || a.p.x - b.p.x);
+    for (const it of order) {
+      const { w, h } = it, g = 3;
+      const cands = [[13, -h / 2], [-13 - w, -h / 2], [8, -h - 7], [8, 7], [-8 - w, -h - 7], [-8 - w, 7], [-w / 2, -h - 11], [-w / 2, 11],
+        [13, -h / 2 - h - g], [13, h / 2 + g], [-13 - w, -h / 2 - h - g], [-13 - w, h / 2 + g], [13, -h / 2 - 2 * (h + g)], [13, h / 2 + h + 2 * g]];
+      let best = null;
+      cands.forEach(([dx, dy], k) => {
+        const b = { x0: it.p.x + dx - 1, y0: it.p.y + dy - 1, x1: it.p.x + dx + w + 1, y1: it.p.y + dy + h + 1 };
+        let cost = k;  // leichte Vorliebe für die gewohnte Lage rechts
+        for (const o of boxes) cost += overlap(b, o) * 10;
+        if (!best || cost < best.cost) best = { cost, dx, dy, b };
+      });
+      it.lab.style.left = `${Math.round(best.dx)}px`; it.lab.style.top = `${Math.round(best.dy)}px`;
+      boxes.push(best.b);
     }
   }
   function drawOtherSensors(except) {
@@ -2022,12 +2476,13 @@ const MapView = (() => {
     return [Math.round(x * 10) / 10, Math.round(y * 10) / 10];
   }
   function onMapClick(e) {
+    if (M.mode === "hot") { hotClusterClick(e); return; }
     if (M.mode === "image") { if (M.imgPick) onImageClick(e.latlng); return; }
     if (M.mode === "cal") {
       if (M.calAdding) {
         const [x, y] = toXY(e.latlng);
         M.calAdding = false; M.map.getContainer().classList.remove("drawing");
-        saveCalPlan(calPlan().concat([{ id: "k" + Date.now().toString(36), x: Math.round(x), y: Math.round(y), label: roomAt(x, y) }]));
+        saveCalPlan(calPlan().concat([{ id: "k" + Date.now().toString(36), x: Math.round(x), y: Math.round(y), label: roomAt(x, y), ...(M.calHeight != null ? { z: M.calHeight } : {}) }]));
         hint();
       }
       return;
@@ -2212,7 +2667,7 @@ const MapView = (() => {
     const frameLL = () => [[0, 0], [m.width_px, 0], [m.width_px, m.height_px], [0, m.height_px]].map(([u, v]) => { const p = imgToLocal(m, u, v); return toLL(p[0], p[1]); });
     const frame = L.polygon(frameLL(), { color: "#7c3aed", weight: 1.5, dashArray: "6 5", fill: false, interactive: false }).addTo(g);
     const center = L.marker(toLL(m.center[0], m.center[1]), { draggable: true, icon: icon("img-h move", "Bild verschieben"), zIndexOffset: 1500 });
-    center.on("drag", (e) => { m.center = toXY(e.target.getLatLng()).map((v) => Math.round(v * 10) / 10); M.img = m; drawImage(true); corner.setLatLng(cornerLL()); frame.setLatLngs(frameLL()); });
+    center.on("drag", (e) => { m.center = toXY(e.target.getLatLng()).map((v) => Math.round(v * 10) / 10); M.img = m; drawImage(true); corner.setLatLng(cornerLL()); frame.setLatLngs(frameLL()); renderImageValues(); });
     center.on("dragend", () => saveImageSoon(true));
     const cornerLL = () => { const p = imgToLocal(m, m.width_px, 0); return toLL(p[0], p[1]); };
     const corner = L.marker(cornerLL(), { draggable: true, icon: icon("img-h rot", "Ziehen: Größe und Drehung"), zIndexOffset: 1500 });
@@ -2340,6 +2795,7 @@ const MapView = (() => {
     const rot = (((m.rotation_deg || 0) + 180) % 360 + 360) % 360 - 180;
     const r1 = Math.round(rot * 10) / 10 || 0;
     set("i-rot", r1.toFixed(1)); set("i-rot-r", r1.toFixed(1));
+    if (m.center) { const [cx, cy] = rel(m.center[0], m.center[1]); set("i-cx", (cx.toFixed(2).replace(".", ",")).replace(/^-0,00$/, "0,00")); set("i-cy", (cy.toFixed(2).replace(".", ",")).replace(/^-0,00$/, "0,00")); }
   }
   function imageSide() {
     const m = imgMeta();
@@ -2348,7 +2804,10 @@ const MapView = (() => {
     return `<div class="panel"><h3>Ausrichten</h3>
         <p class="desc">Kreuz in der Mitte = verschieben, runder Griff ↻ an der Bildecke oben rechts = skalieren und drehen. Am genauesten mit zwei Passpunkten.</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><button class="btn sm primary" id="i-align">Zwei Passpunkte</button><button class="btn sm" id="i-scale">Maßstab aus Strecke</button>${M.imgPick ? '<button class="btn sm" id="i-pick-cancel">Abbrechen</button>' : ""}</div>
-        <div class="field"><label for="i-w">Breite des Bildes (m)</label><div class="range-row"><input type="range" id="i-w-r" min="2" max="60" step="0.5"><input type="number" id="i-w" step="0.05" min="0.5"></div></div>
+        <div class="field"><label for="i-w">Breite des Bildes (m)</label><div class="range-row"><input type="range" id="i-w-r" min="2" max="60" step="0.5"><input type="number" id="i-w" step="0.01" min="0.5"></div></div>
+        <div class="row2"><div class="field"><label for="i-cx">Bildmitte rechts (+) / links (−) m</label><input type="text" inputmode="decimal" id="i-cx"></div>
+        <div class="field"><label for="i-cy">oben (+) / unten (−) m</label><input type="text" inputmode="decimal" id="i-cy"></div></div>
+        <p class="desc" style="margin:-4px 0 12px">Lage der Bildmitte relativ zur Referenz ${esc(nameOf(M.ref) || "")} – zum Eintippen, wenn sie bekannt ist.</p>
         <div class="field"><label for="i-rot">Drehung (°)</label><div class="range-row"><input type="range" id="i-rot-r" min="-180" max="180" step="0.5"><input type="number" id="i-rot" step="0.5"></div></div>
         <div class="field"><label for="i-op">Deckkraft</label><input type="range" id="i-op" min="0.1" max="1" step="0.05" value="${m.opacity ?? 0.6}" style="accent-color:var(--accent)"></div>
         <label class="check"><input type="checkbox" id="i-vis" ${m.visible !== false ? "checked" : ""}><span>In Live und Bearbeiten anzeigen</span></label></div>
@@ -2368,6 +2827,15 @@ const MapView = (() => {
     if (wr) wr.oninput = () => { m.width_cm = +wr.value * 100; upd(); renderImageValues(); };
     if (r) r.onchange = () => { const v = parseFloat(String(r.value).replace(",", ".")); if (isFinite(v)) { m.rotation_deg = (v + 360) % 360; upd(); renderImageValues(); } };
     if (rr) rr.oninput = () => { m.rotation_deg = (+rr.value + 360) % 360; upd(); renderImageValues(); };
+    const cxi = side.querySelector("#i-cx"), cyi = side.querySelector("#i-cy");
+    const setCenter = () => {
+      const x = parseM(cxi.value), y = parseM(cyi.value);
+      if (x == null || y == null || Number.isNaN(x) || Number.isNaN(y)) return toast("Bildmitte bitte in Metern angeben.", "err");
+      const [rx, ry] = refPos();
+      m.center = [Math.round((rx + x) * 10) / 10, Math.round((ry + y) * 10) / 10];
+      upd(); drawImageHandles(); renderImageValues();
+    };
+    if (cxi && cyi) { cxi.onchange = setCenter; cyi.onchange = setCenter; }
     const op = side.querySelector("#i-op"); if (op) op.oninput = () => { m.opacity = +op.value; upd(); };
     const vis = side.querySelector("#i-vis"); if (vis) vis.onchange = () => { m.visible = vis.checked; M.show.planImage = vis.checked; persist(); upd(); };
     const del = side.querySelector("#i-del");
@@ -2436,7 +2904,7 @@ const MapView = (() => {
       const area = (Math.max(...xs) - Math.min(...xs) + 100) * (Math.max(...ys) - Math.min(...ys) + 100) / 1e4;
       points = farthestPoints(cands, Math.max(6, Math.min(12, Math.round(area / 10))) - keep.length, [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2], keep);
     }
-    const fresh = points.map((p, i) => ({ id: "k" + Date.now().toString(36) + i, x: Math.round(p.x), y: Math.round(p.y), label: p.label || roomAt(p.x, p.y) }));
+    const fresh = points.map((p, i) => ({ id: "k" + Date.now().toString(36) + i, x: Math.round(p.x), y: Math.round(p.y), label: p.label || roomAt(p.x, p.y), ...(M.calHeight != null ? { z: M.calHeight } : {}) }));
     saveCalPlan(keep.concat(fresh));
     toast(fresh.length ? `${fresh.length} Messpunkte vorgeschlagen${keep.length ? ` (${keep.length} gemessene behalten)` : ""}.`
       : "Die gemessenen Punkte decken den Plan schon ab – weitere mit „Punkt hinzufügen“.", "ok");
@@ -2455,10 +2923,10 @@ const MapView = (() => {
     const dur = M.calDuration || 90;
     modal({
       title: `Messpunkt ${index + 1}${p.label ? " · " + p.label : ""}`,
-      body: `<ol class="steps"><li>Halsband genau auf den markierten Punkt legen – z. B. auf den Boden oder einen Stuhl, so wie es Lola trägt.</li>
+      body: `<ol class="steps"><li>${p.z != null ? `Halsband genau auf den markierten Punkt legen, in <b>${mStr(p.z)} m</b> Höhe über dem Boden (laut Plan).` : "Halsband genau auf den markierten Punkt legen – z. B. auf den Boden oder einen Stuhl, so wie es Lola trägt."}</li>
         <li>Mindestens 1 m Abstand halten, dein Körper dämpft das Signal.</li><li>Messung läuft ${dur} s; die Karte zeigt den Fortschritt.</li></ol>`,
       foot: `<button class="btn" data-close>Abbrechen</button><button class="btn primary" data-ok>Messung starten</button>`,
-      onMount: (el, close) => { el.querySelector("[data-ok]").onclick = () => { close(); calCmd({ cmd: "start", x: p.x, y: p.y, duration_s: dur, id: p.id, label: p.label || "" }); }; },
+      onMount: (el, close) => { el.querySelector("[data-ok]").onclick = () => { close(); calCmd({ cmd: "start", x: p.x, y: p.y, duration_s: dur, id: p.id, label: p.label || "", ...(p.z != null ? { z: p.z } : {}) }); }; },
     });
   }
   function drawCal() {
@@ -2486,11 +2954,15 @@ const MapView = (() => {
     const activeBox = active ? `<div class="savebox" style="background:var(--info-soft)"><span class="spinner"></span><span class="grow">Messung ${esc(active.label || "")} – noch <b>${Math.ceil(active.remaining_s)} s</b> · ${Object.keys(active.counts || {}).length} Sensoren hören das Halsband</span><button class="btn sm" data-cal="cancel">Abbrechen</button></div>` : "";
     const rows = plan.map((p, i) => {
       const m = measured[p.id], isActive = active && active.id === p.id;
-      const status = isActive ? "läuft …" : m ? `✓ ${Object.keys(m.sensors || {}).length} S.` : "offen";
-      return `<div class="s"><span class="dot ${m ? "on" : isActive ? "warn" : ""}"></span><span class="grow">${i + 1}. ${esc(p.label || "Punkt")}</span><span class="v" title="${m ? "gemessen – so viele Sensoren haben das Halsband gehört" : ""}">${status}</span>
-        ${isActive ? "" : `<button class="btn sm" data-measure="${esc(p.id)}" title="${m ? "Punkt noch einmal messen" : "Messung an diesem Punkt starten"}">${m ? "Neu" : "Messen"}</button>`}<button class="btn sm icon ghost" data-unplan="${esc(p.id)}" title="Entfernen">${ICON.err}</button></div>`;
+      const status = isActive ? "läuft" : m ? `✓${Object.keys(m.sensors || {}).length}` : "";
+      const hz = m && m.z != null ? m.z : p.z;
+      const hIn = `<input type="text" inputmode="decimal" class="cal-h" data-calh="${esc(p.id)}" value="${hz != null ? mStr(hz) : ""}" placeholder="Halsb." ${m || isActive ? `disabled title="${m ? "Gemessen – für eine andere Höhe neu messen" : "Messung läuft"}"` : `title="Höhe des Halsbands über dem Boden (m); leer = Halsbandhöhe aus dem Feintuning"`}>`;
+      return `<div class="s"><span class="dot ${m ? "on" : isActive ? "warn" : ""}"></span><span class="grow">${i + 1}. ${esc(p.label || "Punkt")}</span>${hIn}${status ? `<span class="v" title="${m ? "gemessen – so viele Sensoren haben das Halsband gehört" : "Messung läuft"}">${status}</span>` : ""}
+        ${isActive ? `<button class="btn sm danger" data-cal="cancel" title="Laufende Messung abbrechen – nichts wird gespeichert">Abbrechen</button>`
+          : `<button class="btn sm" data-measure="${esc(p.id)}" title="${m ? "Punkt noch einmal messen (ersetzt die Messung)" : "Messung an diesem Punkt starten"}">${m ? "Neu" : "Messen"}</button>`}${m && !isActive ? `<button class="btn sm icon ghost" data-unmeasure="${esc(p.id)}" title="Messung löschen (der Punkt bleibt)">${ICON.trash}</button>` : ""}${isActive ? "" : `<button class="btn sm icon ghost" data-unplan="${esc(p.id)}" title="${m ? "Punkt samt Messung entfernen" : "Punkt entfernen"}">${ICON.err}</button>`}</div>`;
     }).join("");
-    const extern = st.points.filter((p) => !plan.some((q) => q.id === p.id)).length;
+    const externPts = st.points.filter((p) => !plan.some((q) => q.id === p.id));
+    const extern = externPts.length;
     const fit = st.fit;
     const fitHtml = fit ? `<div class="panel"><h3>Ergebnis Kalibrierplan</h3>
         <p class="desc">Pfadverlust n = <b>${fmtDb(fit.globals.n_factor)}</b> · Streuung σ = ${fmtDb(fit.globals.sigma_db)} dB · ${fit.globals.points} Messwerte${fit.globals.wall_scale != null ? ` · Wandfaktor ${fmtDb(fit.globals.wall_scale)}` : ""}</p>
@@ -2516,8 +2988,12 @@ const MapView = (() => {
         <p class="desc">Halsband nacheinander an die Punkte legen und messen – 8 bis 15 Punkte in allen Räumen. Punkte lassen sich auf der Karte verschieben.</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><button class="btn sm" id="c-suggest">Punkte vorschlagen</button><button class="btn sm" id="c-add">${M.calAdding ? "Klick in die Karte …" : "Punkt hinzufügen"}</button>
           <select id="c-dur" style="width:auto;height:28px">${[60, 90, 120, 180].map((d) => `<option value="${d}" ${d === (M.calDuration || 90) ? "selected" : ""}>${d} s je Punkt</option>`).join("")}</select></div>
+        <div class="field" style="margin:0 0 10px"><label for="c-h">Höhe des Halsbands beim Messen (m)</label>
+          <div class="input-group"><input type="text" inputmode="decimal" id="c-h" value="${M.calHeight != null ? mStr(M.calHeight) : ""}" placeholder="leer = Halsbandhöhe aus dem Feintuning"><button class="btn sm" id="c-h-all" ${plan.some((p) => !measured[p.id]) ? "" : "disabled"}>Für alle offenen Punkte</button></div>
+          <div class="hint">Gilt für neue und vorgeschlagene Punkte. Je Punkt änderbar im Feld neben dem Namen.</div></div>
         <div class="sensor-list">${rows || '<span class="muted">Noch kein Plan – „Punkte vorschlagen“ nutzt die gezeichneten Räume.</span>'}</div>
-        ${extern ? `<p class="desc" style="margin:8px 0 0">Dazu ${extern} früher gemessene Punkte (grau).</p>` : ""}
+        ${extern ? `<p class="desc" style="margin:8px 0 4px">Dazu ${extern} früher gemessene Punkte (grau auf der Karte), die nicht mehr im Plan stehen – sie zählen beim Auswerten mit:</p>
+          <div class="sensor-list">${externPts.map((p) => `<div class="s"><span class="dot"></span><span class="grow">${esc(p.label || "Punkt")}</span><span class="v">${Object.keys(p.sensors || {}).length} S.</span><button class="btn sm icon ghost" data-unmeasure="${esc(p.id)}" title="Messung löschen">${ICON.trash}</button></div>`).join("")}</div>` : ""}
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn primary" data-cal="fit" ${done >= 3 ? "" : "disabled"}>Auswerten (${done} gemessen)</button>${done ? '<button class="btn sm danger" data-cal="clear">Messungen löschen</button>' : ""}</div></div>
       ${fitHtml}${autoHtml}`;
   }
@@ -2534,14 +3010,357 @@ const MapView = (() => {
       calCmd({ cmd });
     }));
     side.querySelectorAll("[data-measure]").forEach((b) => (b.onclick = () => { const i = calPlan().findIndex((p) => p.id === b.dataset.measure); measurePoint(calPlan()[i], i); }));
-    side.querySelectorAll("[data-unplan]").forEach((b) => (b.onclick = () => saveCalPlan(calPlan().filter((p) => p.id !== b.dataset.unplan))));
+    side.querySelectorAll("[data-unmeasure]").forEach((b) => (b.onclick = (e) => {
+      e.stopPropagation();
+      const id = b.dataset.unmeasure;
+      confirmDialog("Messung löschen", "<p>Die Messung an diesem Punkt wird auf dem Tracker gelöscht. Der Punkt bleibt im Plan und kann neu gemessen werden.</p>",
+        "Löschen", () => calCmd({ cmd: "delete", id }, "Messung gelöscht."), true);
+    }));
+    side.querySelectorAll("[data-unplan]").forEach((b) => (b.onclick = (e) => {
+      e.stopPropagation();
+      const id = b.dataset.unplan;
+      if (!calState().points.some((p) => p.id === id)) return saveCalPlan(calPlan().filter((p) => p.id !== id));
+      confirmDialog("Punkt entfernen", "<p>Der Punkt ist schon gemessen. Punkt <b>und</b> seine Messung löschen?</p>", "Löschen", async () => {
+        await calCmd({ cmd: "delete", id });
+        saveCalPlan(calPlan().filter((p) => p.id !== id));
+        toast("Punkt und Messung gelöscht.", "ok");
+      }, true);
+    }));
     const sg = side.querySelector("#c-suggest"); if (sg) sg.onclick = () => (calPlan().length ? confirmDialog("Punkte neu vorschlagen", "<p>Offene Punkte werden ersetzt, gemessene bleiben.</p>", "Vorschlagen", suggestPlan) : suggestPlan());
     const ad = side.querySelector("#c-add"); if (ad) ad.onclick = () => { M.calAdding = true; M.map.getContainer().classList.add("drawing"); hint("Auf die Stelle klicken, an der gemessen werden soll · Esc bricht ab"); renderSide(); };
     const du = side.querySelector("#c-dur"); if (du) du.onchange = () => { M.calDuration = +du.value; };
+    const heightOf = (el) => {
+      const v = parseM(el.value);
+      if (Number.isNaN(v) || (v != null && (v < 0 || v > 600))) { toast("Höhe bitte in Metern zwischen 0 und 6 angeben.", "err"); return undefined; }
+      return v;
+    };
+    const withZ = (p, z) => { const q = { ...p }; if (z == null) delete q.z; else q.z = z; return q; };
+    side.querySelectorAll("[data-calh]").forEach((inp) => (inp.onchange = () => {
+      const z = heightOf(inp); if (z === undefined) return;
+      saveCalPlan(calPlan().map((p) => (p.id === inp.dataset.calh ? withZ(p, z) : p)));
+    }));
+    const ch = side.querySelector("#c-h");
+    if (ch) ch.onchange = () => { const z = heightOf(ch); if (z !== undefined) M.calHeight = z; };
+    const cha = side.querySelector("#c-h-all");
+    if (cha) cha.onclick = () => {
+      const z = ch ? heightOf(ch) : undefined; if (z === undefined) return;
+      M.calHeight = z;
+      const measured = new Set(calState().points.map((p) => p.id));
+      saveCalPlan(calPlan().map((p) => (measured.has(p.id) ? p : withZ(p, z))));
+      toast(z == null ? "Offene Punkte nutzen die Halsbandhöhe." : `Offene Punkte auf ${mStr(z)} m gesetzt.`, "ok");
+    };
     // Auswahl merken, damit sie das Nachladen der Seitenleiste übersteht
     side.querySelectorAll("[data-au-sensor]").forEach((c) => (c.onchange = () => { M.auSel[c.dataset.auSensor] = c.checked; }));
     const an = side.querySelector("#au-n"); if (an) an.onchange = () => { M.auSel._n = an.checked; };
     const aw = side.querySelector("#au-w"); if (aw) aw.onchange = () => { M.auSel._w = aw.checked; };
+  }
+
+  // ===========================================================================
+  // Hotspots: wo Lola sich aufhält – innen (TriLola) und außen (Kippy-GPS)
+  // ===========================================================================
+  const HOT_PERIODS = [["day", "Tag"], ["week", "Woche"], ["month", "Monat"], ["year", "Jahr"]];
+  const HOT_DAYS = { day: 1, week: 7, month: 30, year: 365 };
+  const HOT_IN_CELLS = [[25, "25 cm"], [50, "50 cm"], [100, "1 m"]];
+  const HOT_OUT_CELLS = [[5, "5 m"], [10, "10 m"], [25, "25 m"], [50, "50 m"]];
+  M.hot = { period: "week", end: null, data: null, inside: true, outside: true, error: "" };
+  async function loadHot() {
+    clearTimeout(M.hotTimer);
+    if (M.mode !== "hot") return;
+    const H = M.hot, V = M.hotView;
+    try {
+      // mit dem Fingerabdruck der letzten Antwort: die App schickt nur etwas, wenn sich etwas geändert hat
+      const res = await api("GET", `/api/hotspots?period=${H.period}${H.end ? `&end=${H.end}` : ""}&outdoor=${H.outside ? 1 : 0}&in_cell=${V.in_cell}&out_cell=${V.out_cell}${H.data && H.data.etag ? `&since=${H.data.etag}` : ""}`);
+      if (M.mode !== "hot") return;
+      if (res.unchanged && H.data) H.data.job = res.job;
+      else { H.data = res; H.rev = (H.rev || 0) + 1; }
+      H.error = "";
+    } catch (e) { H.error = e.message || String(e); }
+    drawHot(); renderSide(true);
+    // läuft der GPS-Abruf noch: bald wieder; sonst jede Minute (heute kommt laufend etwas dazu)
+    M.hotTimer = setTimeout(loadHot, H.data && H.data.job && H.data.job.running ? 3000 : (H.end ? 300000 : 60000));
+  }
+  function fmtDur(s) {
+    s = Math.round(s || 0);
+    if (s < 60) return `${s} s`;
+    const m = Math.round(s / 60);
+    if (m < 60) return `${m} min`;
+    const h = Math.floor(m / 60), mm = m % 60;
+    if (h < 48) return mm ? `${h} h ${mm} min` : `${h} h`;
+    const d = Math.floor(h / 24);
+    return `${d} T ${h % 24} h`;
+  }
+  function fmtPct(v) { return `${Math.round((v || 0) * 100)} %`; }
+  function fmtDay(iso) { const [y, m, d] = iso.split("-"); return `${d}.${m}.${y}`; }
+  function shiftDay(iso, days) { const d = new Date(iso + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + days); return d.toISOString().slice(0, 10); }
+
+  // Eigene Zeichenfläche für die Hotspots: zeichnet in Bildschirm-Pixeln, damit auch 25-cm-Zellen
+  // beim Herauszoomen sichtbar bleiben (Mindestgröße), und kann weich überblendete Wolken.
+  const HotLayer = L.Layer.extend({
+    onAdd(map) {
+      this._c = L.DomUtil.create("canvas", "hot-canvas");
+      map.getPane("hotPane").appendChild(this._c);
+      map.on("moveend zoomend resize viewreset", this._redraw, this);
+      map.on("zoomstart", this._hide, this);
+      this._redraw();
+    },
+    onRemove(map) {
+      L.DomUtil.remove(this._c);
+      map.off("moveend zoomend resize viewreset", this._redraw, this);
+      map.off("zoomstart", this._hide, this);
+    },
+    setPainter(fn) { this._paint = fn; if (this._map) this._redraw(); return this; },
+    _hide() { if (this._c) this._c.style.visibility = "hidden"; },
+    _redraw() {
+      const map = this._map, c = this._c;
+      if (!map || !c) return;
+      const size = map.getSize();
+      c.width = size.x; c.height = size.y;
+      c.style.width = size.x + "px"; c.style.height = size.y + "px";
+      L.DomUtil.setPosition(c, map.containerPointToLayerPoint([0, 0]));
+      c.style.visibility = "";
+      const ctx = c.getContext("2d");
+      ctx.clearRect(0, 0, size.x, size.y);
+      if (this._paint) this._paint(ctx, map, size);
+    },
+  });
+  const HEAT_PALETTE = (() => {
+    const p = new Uint8ClampedArray(256 * 3);
+    for (let i = 0; i < 256; i++) {
+      const m = heatColor(i / 255).match(/\d+/g).map(Number);
+      p[i * 3] = m[0]; p[i * 3 + 1] = m[1]; p[i * 3 + 2] = m[2];
+    }
+    return p;
+  })();
+  const blobCache = {};
+  function heatBlob(r) {
+    r = Math.max(2, Math.round(r));
+    if (blobCache[r]) return blobCache[r];
+    const b = document.createElement("canvas"); b.width = b.height = 2 * r;
+    const g = b.getContext("2d"), grad = g.createRadialGradient(r, r, 0, r, r, r);
+    grad.addColorStop(0, "rgba(0,0,0,1)"); grad.addColorStop(0.45, "rgba(0,0,0,0.55)"); grad.addColorStop(1, "rgba(0,0,0,0)");
+    g.fillStyle = grad; g.fillRect(0, 0, 2 * r, 2 * r);
+    const keys = Object.keys(blobCache); if (keys.length > 40) delete blobCache[keys[0]];
+    return (blobCache[r] = b);
+  }
+  // pts: [[px, py, gewicht 0..1]] in Bildschirm-Pixeln, r = Wolkenradius in Pixeln
+  function paintCloud(ctx, size, pts, r) {
+    if (!pts.length) return;
+    const sh = document.createElement("canvas"); sh.width = size.x; sh.height = size.y;
+    const g = sh.getContext("2d"), blob = heatBlob(r), rr = blob.width / 2;
+    for (const [x, y, w] of pts) {
+      if (x < -rr || y < -rr || x > size.x + rr || y > size.y + rr) continue;
+      g.globalAlpha = Math.min(1, 0.12 + 0.88 * w);
+      g.drawImage(blob, x - rr, y - rr);
+    }
+    const img = g.getImageData(0, 0, size.x, size.y), d = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const a = d[i + 3];
+      if (!a) continue;
+      d[i] = HEAT_PALETTE[a * 3]; d[i + 1] = HEAT_PALETTE[a * 3 + 1]; d[i + 2] = HEAT_PALETTE[a * 3 + 2];
+      d[i + 3] = Math.min(215, a * 1.35);
+    }
+    g.putImageData(img, 0, 0);
+    ctx.drawImage(sh, 0, 0);
+  }
+  function drawHot() {
+    const g = M.layers.hot;
+    if (g) g.clearLayers();
+    if (!M.hotLayer) return;
+    if (M.mode !== "hot" || !M.hot.data) { if (M.hotKey) { M.hotKey = ""; M.hotLayer.setPainter(null); } return; }
+    const D = M.hot.data, V = M.hotView, style = ["cells", "cluster"].includes(V.style) ? V.style : "cloud", cloud = style === "cloud";
+    // drawAll läuft bei jeder Live-Meldung: nur neu malen, wenn sich wirklich etwas geändert hat
+    const gg = geo(), key = [M.hot.rev, V.style, M.hot.inside, M.hot.outside, gg.lat, gg.lon, gg.bearing].join("|");
+    if (key === M.hotKey) return;
+    M.hotKey = key;
+    M.hotLayer.setPainter((ctx, map, size) => {
+      const cp = (ll) => map.latLngToContainerPoint(ll);
+      M.hotClusters = [];
+      if (M.hot.inside && D.indoor && D.indoor.cells.length) {
+        const cells = D.indoor.cells, c = D.indoor.cell_cm || 25;
+        let max = 0; for (const p of cells) if (p[2] > max) max = p[2];
+        // lokales Koordinatensystem (cm) → Bildschirm: Ursprung + zwei Achsen je Meter
+        const o = cp(toLL(0, 0)), ex = cp(toLL(100, 0)).subtract(o), ey = cp(toLL(0, 100)).subtract(o);
+        const at = (x, y) => [o.x + ex.x * x / 100 + ey.x * y / 100, o.y + ex.y * x / 100 + ey.y * y / 100];
+        const pxPerM = Math.hypot(ex.x, ex.y), side = pxPerM * c / 100;
+        if (style === "cluster") paintClusters(ctx, size, cells.map(([x, y, s]) => [...at(x, y), s]), D.indoor.total_s);
+        else if (cloud) paintCloud(ctx, size, cells.map(([x, y, s]) => [...at(x, y), Math.sqrt(s / max)]), Math.max(7, side * 1.1));
+        else paintCells(ctx, size, cells, max, side, (x, y, h) => [at(x - h, y - h), at(x + h, y - h), at(x + h, y + h), at(x - h, y + h)], c / 2, at);
+      }
+      if (M.hot.outside && D.outdoor && D.outdoor.cells && D.outdoor.cells.length) {
+        const cells = D.outdoor.cells, cm = D.outdoor.cell_m || 10;
+        let max = 0; for (const p of cells) if (p[2] > max) max = p[2];
+        const lat0 = cells[0][0], lon0 = cells[0][1];
+        const pxPerM = Math.abs(cp([lat0 + 1 / 111132.92, lon0]).y - cp([lat0, lon0]).y), side = pxPerM * cm;
+        const at = (lat, lon) => { const p = cp([lat, lon]); return [p.x, p.y]; };
+        if (style === "cluster") paintClusters(ctx, size, cells.map(([a, b, s]) => [...at(a, b), s]), D.outdoor.total_s);
+        else if (cloud) paintCloud(ctx, size, cells.map(([a, b, s]) => [...at(a, b), Math.sqrt(s / max)]), Math.max(7, side * 1.1));
+        else {
+          const dl = cm / 2 / 111132.92;
+          paintCells(ctx, size, cells, max, side, (a, b) => {
+            const dn = cm / 2 / (111412.84 * Math.cos(a * Math.PI / 180));
+            return [at(a - dl, b - dn), at(a - dl, b + dn), at(a + dl, b + dn), at(a + dl, b - dn)];
+          }, 0, at);
+        }
+      }
+    });
+  }
+  // Cluster: Aufenthalte, die auf dem Bildschirm näher als ~50 px beieinander liegen, zu einem Kreis
+  // zusammenfassen (gewichteter Schwerpunkt). Beim Hineinzoomen zerfallen sie in kleinere Orte.
+  const CLUSTER_PX = 50;
+  function clusterPoints(pts, R) {
+    const order = pts.slice().sort((a, b) => b[2] - a[2]), grid = new Map(), out = [];
+    const cellOf = (x, y) => `${Math.floor(x / R)},${Math.floor(y / R)}`;
+    for (const [x, y, s] of order) {
+      const gx = Math.floor(x / R), gy = Math.floor(y / R);
+      let best = null, bd = R * R;
+      for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+        for (const c of grid.get(`${gx + i},${gy + j}`) || []) {
+          const d = (c.sx - x) ** 2 + (c.sy - y) ** 2;
+          if (d <= bd) { bd = d; best = c; }
+        }
+      }
+      if (best) {
+        best.wx += x * s; best.wy += y * s; best.s += s; best.n++;
+        best.x0 = Math.min(best.x0, x); best.y0 = Math.min(best.y0, y); best.x1 = Math.max(best.x1, x); best.y1 = Math.max(best.y1, y);
+      } else {
+        const c = { sx: x, sy: y, wx: x * s, wy: y * s, s, n: 1, x0: x, y0: y, x1: x, y1: y };  // sx/sy: fester Kern (stärkster Punkt)
+        out.push(c);
+        const k = cellOf(x, y); if (!grid.has(k)) grid.set(k, []); grid.get(k).push(c);
+      }
+    }
+    return out.map((c) => ({ ...c, x: c.wx / c.s, y: c.wy / c.s }));
+  }
+  function fmtDurShort(s) {
+    s = Math.round(s || 0);
+    if (s < 60) return "<1 min";
+    if (s < 3600) return `${Math.round(s / 60)} min`;
+    if (s < 48 * 3600) return `${Math.round(s / 360) / 10} h`.replace(".", ",");
+    return `${Math.round(s / 8640) / 10} T`.replace(".", ",");
+  }
+  function paintClusters(ctx, size, pts, total) {
+    const cl = clusterPoints(pts.filter(([x, y]) => x > -CLUSTER_PX && y > -CLUSTER_PX && x < size.x + CLUSTER_PX && y < size.y + CLUSTER_PX), CLUSTER_PX);
+    if (!cl.length) return;
+    const max = Math.max(...cl.map((c) => c.s)), sum = total || cl.reduce((a, c) => a + c.s, 0);
+    cl.sort((a, b) => a.s - b.s);  // die großen zuletzt, also obenauf
+    for (const c of cl) {
+      const t = Math.sqrt(c.s / max), share = c.s / sum;
+      if (share < 0.002) continue;  // unter 0,2 % – nur Rauschen
+      const r = 11 + 19 * t;
+      ctx.beginPath(); ctx.arc(c.x, c.y, r, 0, 2 * Math.PI);
+      ctx.globalAlpha = 0.88; ctx.fillStyle = heatColor(0.15 + 0.85 * t); ctx.fill();
+      ctx.globalAlpha = 1; ctx.lineWidth = 2; ctx.strokeStyle = "#fff"; ctx.stroke();
+      ctx.font = `650 ${r > 18 ? 12 : 10.5}px system-ui, sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.lineWidth = 3; ctx.strokeStyle = "rgba(255,255,255,.85)"; ctx.fillStyle = "#1f2937";
+      const pct = share >= 0.01 ? `${Math.round(share * 100)} %` : "<1 %";
+      const lines = r > 18 ? [fmtDurShort(c.s), pct] : [pct];
+      lines.forEach((txt, i) => { const y = c.y + (lines.length === 2 ? (i ? 7 : -6) : 0); ctx.strokeText(txt, c.x, y); ctx.fillText(txt, c.x, y); });
+      M.hotClusters.push({ x: c.x, y: c.y, r, x0: c.x0, y0: c.y0, x1: c.x1, y1: c.y1, s: c.s, share });
+    }
+  }
+  // Klick auf einen Cluster: hineinzoomen, bis er in seine Orte zerfällt
+  function hotClusterClick(e) {
+    if (M.mode !== "hot" || M.hotView.style !== "cluster" || !M.hotClusters) return false;
+    const p = M.map.latLngToContainerPoint(e.latlng);
+    const hit = M.hotClusters.slice().reverse().find((c) => (c.x - p.x) ** 2 + (c.y - p.y) ** 2 <= c.r * c.r);
+    if (!hit) return false;
+    const a = M.map.containerPointToLatLng([hit.x0, hit.y0]), b = M.map.containerPointToLatLng([hit.x1, hit.y1]);
+    if (hit.x1 - hit.x0 < 4 && hit.y1 - hit.y0 < 4) M.map.setView(M.map.containerPointToLatLng([hit.x, hit.y]), Math.min(M.map.getZoom() + 2, 23));
+    else M.map.fitBounds(L.latLngBounds(a, b).pad(0.3), { maxZoom: 23 });
+    return true;
+  }
+  // Kästchen: echte Zellgröße, aber mindestens 3 px, damit nichts beim Herauszoomen verschwindet
+  function paintCells(ctx, size, cells, max, side, corners, half, center) {
+    const tiny = side < 3;
+    for (const [a, b, s] of cells) {
+      const t = Math.sqrt(s / max);
+      if (t < 0.04) continue;
+      ctx.fillStyle = heatColor(t);
+      ctx.globalAlpha = 0.25 + 0.55 * t;
+      if (tiny) {
+        const [x, y] = center(a, b);
+        if (x < -3 || y < -3 || x > size.x + 3 || y > size.y + 3) continue;
+        ctx.fillRect(x - 1.5, y - 1.5, 3, 3);
+        continue;
+      }
+      const q = corners(a, b, half);
+      if (q.every((p) => p[0] < 0) || q.every((p) => p[1] < 0) || q.every((p) => p[0] > size.x) || q.every((p) => p[1] > size.y)) continue;
+      ctx.beginPath(); ctx.moveTo(q[0][0], q[0][1]);
+      for (let k = 1; k < 4; k++) ctx.lineTo(q[k][0], q[k][1]);
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+  // Warum drinnen nichts zu sehen ist: kommt vom Tracker etwas an, hat der HA-Verlauf etwas?
+  function hotDiag(I) {
+    const g = I.diag;
+    if (!g || !I.recording) return "";
+    const age = (s) => (s == null ? "" : s < 90 ? `vor ${s} s` : s < 5400 ? `vor ${Math.round(s / 60)} min` : `vor ${Math.round(s / 3600)} h`);
+    const live = !g.messages ? "Seit dem Start der App kam keine Live-Meldung vom Tracker an – läuft er, und ist der MQTT-Broker in den Einstellungen richtig?"
+      : g.last_pos_age_s == null ? `Live-Meldungen kommen an (zuletzt ${age(g.last_msg_age_s)}), aber noch keine mit Position – Lola ist laut Tracker „${esc(g.last_state || "?")}“.`
+      : `Letzte Position vom Tracker ${age(g.last_pos_age_s)} – wird aufgezeichnet.`;
+    const hist = !g.history_entity ? "HA-Verlauf: keine TriLola-Entität gefunden (device_tracker mit source „trilola“)."
+      : `HA-Verlauf (${esc(g.history_entity)}): ${g.history_days ? `${g.history_days} Tage nachgeladen` : "keine Positionen im Zeitraum"}${g.history_error ? ` · Fehler: ${esc(g.history_error)}` : ""}.`;
+    return `<p class="desc" style="margin:8px 0 0;font-size:12px">${live}<br>${hist}</p>`;
+  }
+  function hotSide() {
+    const H = M.hot, D = H.data, V = M.hotView;
+    const today = (D && D.today) || new Date().toISOString().slice(0, 10);
+    const end = H.end || today;
+    const range = D ? (D.from === D.to ? fmtDay(D.to) : `${fmtDay(D.from)} – ${fmtDay(D.to)}`) : "…";
+    const job = D && D.job;
+    const status = [
+      H.error ? `<div class="notice err" style="margin:0 0 10px"><div>${esc(H.error)}</div></div>` : "",
+      job && job.running ? `<div class="savebox" style="background:var(--info-soft);margin:0 0 10px"><span class="spinner"></span><span class="grow">GPS-Verlauf von Kippy wird geladen … ${job.done}/${job.total} Tage</span></div>` : "",
+      job && job.error && !job.running ? `<div class="notice warn" style="margin:0 0 10px"><div>${esc(job.error)}</div></div>` : "",
+    ].join("");
+    const I = D && D.indoor, O = D && D.outdoor;
+    const bar = (share) => `<div style="height:6px;border-radius:3px;background:var(--line);margin-top:3px"><div style="height:6px;border-radius:3px;width:${Math.max(2, Math.round(share * 100))}%;background:var(--accent)"></div></div>`;
+    const inside = !I ? "" : `<div class="panel"><h3>Drinnen · ${fmtDur(I.total_s)}</h3>
+      ${!I.recording ? `<div class="notice info" style="margin:0 0 8px"><div>Hotspots zeichnet nur die Home-Assistant-App auf – bitte dort öffnen (TriLola in der HA-Seitenleiste).</div></div>` : ""}
+      ${I.total_s ? `${I.rooms.length ? `<p class="desc" style="margin:0 0 4px">Räume</p>${I.rooms.map((r) => `<div style="margin:0 0 6px"><div style="display:flex;justify-content:space-between;gap:10px;font-size:13px"><span>${esc(r.name)}</span><span class="mono" style="font-size:12px;color:var(--muted);white-space:nowrap">${fmtPct(r.share)} · ${fmtDur(r.s)}</span></div>${bar(r.share)}</div>`).join("")}` : ""}
+        <p class="desc" style="margin:10px 0 4px">Lieblingsplätze</p><div class="sensor-list">${I.spots.map((p, i) => `<div class="s" data-hot-in="${i}"><span class="grow">${i + 1}. ${esc(p.room || "Platz")}</span><span class="v">${fmtPct(p.share)} · ${fmtDur(p.s)}</span></div>`).join("")}</div>`
+        : `<p class="desc" style="margin:0">Keine Daten in diesem Zeitraum.${I.first_day ? ` Aufzeichnung seit ${fmtDay(I.first_day)}.` : ""}</p>${hotDiag(I)}`}</div>`;
+    const outside = !O ? "" : !O.available ? `<div class="panel"><h3>Draußen</h3><p class="desc" style="margin:0">Der GPS-Verlauf von Kippy steht nur in der Home-Assistant-App zur Verfügung.</p></div>`
+      : `<div class="panel"><h3>Draußen · ${fmtDur(O.total_s)}</h3>
+        <p class="desc" style="margin:0 0 8px">Laut GPS zu Hause (≤ ${Math.round(O.home_radius_m || 30)} m): ${fmtDur(O.home_s)}${O.total_s + O.home_s ? ` · draußen ${fmtPct(O.total_s / (O.total_s + O.home_s))} der GPS-Zeit` : ""}</p>
+        ${O.spots.length ? `<div class="sensor-list">${O.spots.map((p, i) => `<div class="s" data-hot-out="${i}"><span class="grow">${i + 1}. ${p.dist_m != null ? `${p.dist_m < 1000 ? `${p.dist_m} m` : `${(p.dist_m / 1000).toFixed(1).replace(".", ",")} km`} vom Haus` : "Ort"}</span><span class="v">${fmtPct(p.share)} · ${fmtDur(p.s)}</span></div>`).join("")}</div>
+          <div class="actions" style="margin-top:8px"><button class="btn sm" id="hot-fit-out">Draußen zeigen</button><button class="btn sm" id="hot-fit-in">Wohnung zeigen</button></div>`
+          : `<p class="desc" style="margin:0">${job && job.running ? "Wird geladen …" : "Keine GPS-Punkte außerhalb des Hauses in diesem Zeitraum."}</p>`}</div>`;
+    return `${status}<div class="panel"><h3>Zeitraum</h3>
+        <div class="seg" id="hot-period" style="box-shadow:none;margin:0 0 10px">${HOT_PERIODS.map(([k, l]) => `<button data-p="${k}" class="${H.period === k ? "on" : ""}">${l}</button>`).join("")}</div>
+        <div style="display:flex;gap:8px;align-items:center"><button class="btn sm icon" id="hot-prev" title="Früher">‹</button><span class="grow" style="text-align:center;font-size:13px">${esc(range)}</span>
+          <button class="btn sm icon" id="hot-next" title="Später" ${end >= today ? "disabled" : ""}>›</button><button class="btn sm" id="hot-today" ${end >= today ? "disabled" : ""}>Heute</button></div>
+        <div class="checks" style="margin-top:10px"><label><input type="checkbox" id="hot-in" ${H.inside ? "checked" : ""}>Drinnen (TriLola)</label><label><input type="checkbox" id="hot-out" ${H.outside ? "checked" : ""}>Draußen (Kippy-GPS)</label></div>
+        <div class="legend-bar" style="margin-top:10px"></div><div class="legend-scale"><span>kurz</span><span>Aufenthaltsdauer</span><span>lang</span></div></div>
+      <div class="panel"><h3>Darstellung</h3>
+        <div class="seg" id="hot-style" style="box-shadow:none;margin:0 0 10px"><button data-s="cloud" class="${!["cells", "cluster"].includes(V.style) ? "on" : ""}">Wolken</button><button data-s="cells" class="${V.style === "cells" ? "on" : ""}">Kästchen</button><button data-s="cluster" class="${V.style === "cluster" ? "on" : ""}">Cluster</button></div>
+        <div class="row2"><div class="field" style="margin:0"><label for="hot-incell">Raster drinnen</label><select id="hot-incell">${HOT_IN_CELLS.map(([v, l]) => `<option value="${v}" ${v === +V.in_cell ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+          <div class="field" style="margin:0"><label for="hot-outcell">Raster draußen</label><select id="hot-outcell">${HOT_OUT_CELLS.map(([v, l]) => `<option value="${v}" ${v === +V.out_cell ? "selected" : ""}>${l}</option>`).join("")}</select></div></div>
+        <p class="desc" style="margin:8px 0 0">${V.style === "cluster" ? "Cluster fassen nahe Orte zu Kreisen zusammen (Zahl = Dauer und Anteil); beim Hineinzoomen oder Anklicken zerfallen sie in einzelne Plätze." : "Feiner = genauer, aber verstreuter. Draußen ist Kippy auf etwa 10 m genau."}</p></div>
+      ${H.inside ? inside : ""}${H.outside ? outside : ""}`;
+  }
+  function wireHotSide(side) {
+    const H = M.hot, D = H.data;
+    const today = (D && D.today) || new Date().toISOString().slice(0, 10);
+    side.querySelectorAll("#hot-period [data-p]").forEach((b) => (b.onclick = () => { H.period = b.dataset.p; loadHot(); }));
+    const step = (dir) => { const end = H.end || today; const next = shiftDay(end, dir * HOT_DAYS[H.period]); H.end = next >= today ? null : next; loadHot(); };
+    const prev = side.querySelector("#hot-prev"); if (prev) prev.onclick = () => step(-1);
+    const next = side.querySelector("#hot-next"); if (next) next.onclick = () => step(1);
+    const td = side.querySelector("#hot-today"); if (td) td.onclick = () => { H.end = null; loadHot(); };
+    const hi = side.querySelector("#hot-in"); if (hi) hi.onchange = () => { H.inside = hi.checked; drawHot(); renderSide(); };
+    side.querySelectorAll("#hot-style [data-s]").forEach((b) => (b.onclick = () => { M.hotView.style = b.dataset.s; persist(); drawHot(); renderSide(); hint(); }));
+    const ic = side.querySelector("#hot-incell"); if (ic) ic.onchange = () => { M.hotView.in_cell = +ic.value; persist(); loadHot(); };
+    const oc = side.querySelector("#hot-outcell"); if (oc) oc.onchange = () => { M.hotView.out_cell = +oc.value; persist(); loadHot(); };
+    const ho = side.querySelector("#hot-out"); if (ho) ho.onchange = () => { H.outside = ho.checked; loadHot(); };
+    side.querySelectorAll("[data-hot-in]").forEach((r) => (r.onclick = () => { const p = D.indoor.spots[+r.dataset.hotIn]; M.map.setView(toLL(p.x, p.y), Math.max(M.map.getZoom(), 21)); }));
+    side.querySelectorAll("[data-hot-out]").forEach((r) => (r.onclick = () => { const p = D.outdoor.spots[+r.dataset.hotOut]; M.map.setView([p.lat, p.lon], 18); }));
+    const fo = side.querySelector("#hot-fit-out");
+    if (fo) fo.onclick = () => {
+      const pts = D.outdoor.cells.map((c) => [c[0], c[1]]);
+      if (!geo().none) pts.push([geo().lat, geo().lon]);
+      if (pts.length) M.map.fitBounds(L.latLngBounds(pts).pad(0.15), { maxZoom: 18 });
+    };
+    const fi = side.querySelector("#hot-fit-in"); if (fi) fi.onclick = () => fit();
   }
 
   // ---- Seitenleiste ------------------------------------------------------------------
@@ -2552,7 +3371,7 @@ const MapView = (() => {
     const warn = !P.mqtt || !P.mqtt.connected ? `<div class="notice warn" style="margin:0"><div>Keine Verbindung zum MQTT-Broker – Einstellungen prüfen.</div></div>`
       : !P.tracker_online ? `<div class="notice warn" style="margin:0"><div>Der Tracker ist offline. Anzeigen ist möglich, speichern erst, wenn er wieder läuft.</div></div>` : "";
     const html = M.mode === "live" ? warn + liveSide() : M.mode === "edit" ? warn + editSide() : M.mode === "image" ? imageSide()
-      : M.mode === "cal" ? warn + calSide() : warn + geoSide();
+      : M.mode === "cal" ? warn + calSide() : M.mode === "hot" ? hotSide() : warn + geoSide();
     // Unverändert → nicht neu aufbauen (sonst gehen Klicks und offene Auswahllisten beim Polling verloren)
     if (fromPoll && side._html === html && side._mode === M.mode) return;
     side._html = html; side._mode = M.mode;
@@ -2560,6 +3379,7 @@ const MapView = (() => {
     wireSide(side);
     if (M.mode === "image") wireImageSide(side);
     if (M.mode === "cal") wireCalSide(side);
+    if (M.mode === "hot") wireHotSide(side);
   }
   function layerChecks(keys) {
     const labels = { plan: "Grundriss", sensors: "Geräte", radio: "Funkstörung", links: "Funkstrecken", lola: "Lola", trail: "Spur (10 min)", cloud: "Aufenthaltswolke", grid: "Raster 1 m", follow: "Lola folgen", planImage: "Grundriss-Bild", staticInEdit: "Statische Funkkarte (Hilfe zum Wände zeichnen)" };
@@ -2634,11 +3454,13 @@ const MapView = (() => {
       <div class="panel"><h3>Wandtyp beim Zeichnen</h3><div class="field" style="margin:0"><select id="w-type">${WALL_TYPES.map((t) => `<option value="${t.key}" ${t.key === wt ? "selected" : ""}>${esc(t.label)} · ${t.db} dB</option>`).join("")}</select></div></div>
       <div class="panel"><h3>Stockwerk</h3>${heightsSupported() ? "" : '<div class="notice warn" style="margin:0 0 8px"><div>Braucht Tracker 2.3 – bitte erst den Tracker-Pi aktualisieren.</div></div>'}<div class="field" style="margin:0 0 6px"><label for="f-elev">Fußboden der Wohnung über Grund (m)</label><input type="text" inputmode="decimal" id="f-elev" value="${mStr(fp.floor_elevation_cm)}" placeholder="0,00 = Erdgeschoss"></div>
         <p class="desc" style="margin:0">Gerätehöhen zählen ab dem Fußboden. Diese Angabe braucht es nur, wenn ein Gerät auf einem anderen Stockwerk steht – dann zählt der Höhenunterschied der Fußböden mit.</p></div>
+      <div class="panel"><h3>Tabelle &amp; CSV</h3><p class="desc" style="margin:0 0 10px">Positionen, Höhen und Kalibrierpunkte als Tabelle bearbeiten – oder aus SweetHome3D übernehmen: Möbelliste als CSV mit den Spalten Name, X, Y und „Höhe über Boden“.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm" data-postable>Tabelle öffnen</button><label class="btn sm">CSV importieren<input type="file" id="pos-file" accept=".csv,.txt,.tsv,text/csv,text/plain" hidden></label><button class="btn sm" data-posexport>CSV exportieren</button></div></div>
       <div class="panel"><h3>Noch nicht platziert</h3>${unplaced.length ? `<div class="sensor-list">${unplaced.map((s) => `<div class="s"><span class="grow">${esc(s.name)}</span><button class="btn sm" data-place="${esc(s.id)}">Platzieren</button></div>`).join("")}</div>` : `<p class="desc" style="margin:0">Alle Geräte haben eine Position.</p>`}</div>
       <div class="panel"><h3>Anzeige</h3>${layerChecks(["grid", "planImage", "staticInEdit"])}<p class="desc" style="margin:6px 0 0">${fp.rooms.length} Räume · ${fp.walls.length} Wände · Raster und Maße relativ zu <b>${esc(nameOf(M.ref) || "–")}</b></p></div>`;
   }
   function mStr(cm) { return cm == null ? "" : (cm / 100).toFixed(2).replace(".", ","); }
-  function parseM(v) { const t = String(v ?? "").trim().replace(",", "."); if (!t) return null; const n = parseFloat(t); return isFinite(n) ? Math.round(n * 1000) / 10 : NaN; }
+  function parseM(v) { const t = String(v ?? "").trim().replace(/[−–]/g, "-").replace(",", "."); if (!t) return null; const n = parseFloat(t); return isFinite(n) ? Math.round(n * 1000) / 10 : NaN; }
   function heightsSupported() { const v = M.plan && M.plan.tracker_version; return !v || !vlt(v, "2.3.0"); }
   function heightFields(s) {
     const h = sensorHeight(s);
@@ -2688,6 +3510,9 @@ const MapView = (() => {
     side.querySelectorAll("#mv-radio [data-r]").forEach((b) => (b.onclick = () => { M.show.radioLayer = b.dataset.r; persist(); drawRadio(); renderSide(); }));
     side.querySelectorAll("[data-focus]").forEach((r) => (r.onclick = () => { const s = sensors().find((x) => x.id === r.dataset.focus); const p = s && sensorPos(s); if (p) M.map.panTo(toLL(p[0], p[1])); }));
     const save = side.querySelector("[data-save]"); if (save) save.onclick = saveDraft;
+    const pt = side.querySelector("[data-postable]"); if (pt) pt.onclick = () => openPosTable(currentTableRows());
+    const pe = side.querySelector("[data-posexport]"); if (pe) pe.onclick = () => downloadCsv(currentTableRows());
+    const pf0 = side.querySelector("#pos-file"); if (pf0) pf0.onchange = () => { importPositionsFile(pf0.files[0]); pf0.value = ""; };
     const disc = side.querySelector("[data-discard]"); if (disc) disc.onclick = () => { discardDraft(); startDraft(); drawAll(); renderSide(); };
     const del = side.querySelector("[data-del]"); if (del) del.onclick = deleteSelected;
     const wt = side.querySelector("#w-type"); if (wt) wt.onchange = () => { M.wallType = wt.value; };

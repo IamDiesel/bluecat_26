@@ -90,6 +90,22 @@ def test_tomography_static_and_dynamic():
     assert 0.3 * on_link < later < 0.8 * on_link
 
 
+def test_static_map_follows_moved_sensor():
+    """Ein Sensor innerhalb des Rasters verschoben (Raster und Normalwerte gleich): statische Karte neu rechnen."""
+    links, _ = synthetic_links()
+    env = RadioEnvironmentModel(POS, baseline_learning_samples=5)
+    rng = np.random.default_rng(4)
+    for r, t, b, _ in links:
+        for i in range(5):
+            env.observe(r, t, b + rng.normal(0, 0.3), 1.0 + i)
+    tomo = RadioTomography()
+    before = tomo.update(env, 10.0, FLOOR)["static"]
+    grid_key = tomo.grid.key
+    env.sensor_positions["shelly_schlafzimmer"] = np.array([-40.0, -480.0])
+    after = tomo.update(env, 11.0, FLOOR)["static"]
+    assert tomo.grid.key == grid_key and after != before
+
+
 def test_autocal_keeps_level_and_orders_gains():
     links, gain = synthetic_links()
     configs = {k: {"tx_power": -60.0, "n_factor": 3.0} for k in POS}

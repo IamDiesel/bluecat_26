@@ -484,6 +484,9 @@ def build_pi_bundle(fleet: Fleet, node: Node) -> bytes:
             "ROLE_SENSOR": "1" if node.sensor else "0",
             "ROLE_TRACKER": "1" if node.tracker else "0",
             "BLUETOOTH_EXPERIMENTAL": "1" if node.extra.get("bluetooth_experimental", True) else "0",
+            # auto = USB-Stick nutzen, wenn einer steckt; usb / intern = fest
+            "BLUETOOTH": str(node.extra.get("bluetooth", "auto")) if str(node.extra.get("bluetooth", "auto"))
+            in {"auto", "usb", "intern"} else "auto",
         }
         add_bytes("deploy.env", "".join(f"{k}={v}\n" for k, v in env.items()).encode())
         add_file(os.path.join(PI_SENSOR_DIR, "bluecat2mqtt.py"), "sensor/bluecat2mqtt.py")
@@ -1567,6 +1570,125 @@ def _unpack_json_tar(data: bytes, directory: str) -> List[str]:
     return written
 
 
+# ---------------------------------------------------------------------------
+# Tracker-Stand über MQTT sichern/wiederherstellen (ohne SSH – z. B. wenn die SD-Karte defekt ist)
+# ---------------------------------------------------------------------------
+BACKUP_DIR = os.path.join(DATA_DIR, "backup")
+BACKUP_TOPICS = ["bluecat/config/#", "bluecat/registry/+/identity"]
+RESTORE_PARTS = ("floorplan", "georef", "tuning", "positions", "calibration")
+_SENSOR_STATE_RE = re.compile(r"^bluecat/config/sensors/([A-Za-z0-9_-]+)/(position|calibration)/state$")
+
+
+def _backup_summary(retained: Dict[str, str]) -> str:
+    def load(topic):
+        try:
+            return json.loads(retained.get(topic) or "null")
+        except ValueError:
+            return None
+    fp = load("bluecat/config/floorplan/state") or {}
+    tun = load("bluecat/config/tracker/tuning/state") or {}
+    sensors = {m.group(1) for m in map(_SENSOR_STATE_RE.match, retained) if m}
+    overrides = [p["key"] for p in tun.get("params", []) if isinstance(p, dict) and p.get("overridden")]
+    geo = load("bluecat/config/tracker/georef/state") or {}
+    return (f"{len(sensors)} Geräte, Grundriss {len(fp.get('walls') or [])} Wände / {len(fp.get('rooms') or [])} Räume, "
+            f"Kartenbezug {'ja' if geo.get('lat') is not None else 'nein'}, {len(overrides)} geänderte Feintuning-Werte")
+
+
+def cmd_tracker_backup(fleet: Fleet, out: Optional[str] = None) -> str:
+    """Liest den gespeicherten (retained) Stand des Trackers vom Broker – funktioniert auch, wenn der Tracker weg ist."""
+    retained = mqtt_collect(fleet, BACKUP_TOPICS, seconds=4.0)
+    retained = {t: p for t, p in retained.items() if p != ""}
+    if not any(t.startswith("bluecat/config/") for t in retained):
+        raise DeployError("Auf dem Broker liegt kein gespeicherter Tracker-Stand (bluecat/config/…)")
+    path = out or os.path.join(BACKUP_DIR, f"tracker_{time.strftime('%Y%m%d-%H%M%S')}.json")
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump({"version": 1, "created": time.strftime("%Y-%m-%d %H:%M:%S"), "retained": retained},
+                  handle, indent=1, ensure_ascii=False)
+    ok(f"Gesichert: {path}")
+    info(_backup_summary(retained))
+    return path
+
+
+def latest_backup() -> Optional[str]:
+    try:
+        names = sorted(n for n in os.listdir(BACKUP_DIR) if n.startswith("tracker_") and n.endswith(".json"))
+    except OSError:
+        return None
+    return os.path.join(BACKUP_DIR, names[-1]) if names else None
+
+
+def restore_messages(retained: Dict[str, str], parts=RESTORE_PARTS):
+    """Set-Befehle, die den gesicherten Stand in einen (neuen) Tracker schreiben."""
+    def load(topic):
+        try:
+            return json.loads(retained.get(topic) or "null")
+        except ValueError:
+            return None
+    items = []
+    if "floorplan" in parts:
+        fp = load("bluecat/config/floorplan/state")
+        if isinstance(fp, dict) and (fp.get("walls") or fp.get("rooms") or fp.get("floor_elevation_cm") is not None):
+            items.append(("bluecat/config/floorplan/set", json.dumps(fp), False))
+    if "georef" in parts:
+        geo = load("bluecat/config/tracker/georef/state")
+        if isinstance(geo, dict) and geo.get("lat") is not None and geo.get("lon") is not None:
+            keep = {k: geo[k] for k in ("lat", "lon", "bearing_deg", "reference", "reference_lat", "reference_lon")
+                    if geo.get(k) is not None}
+            items.append(("bluecat/config/tracker/georef/set", json.dumps(keep), False))
+    if "tuning" in parts:
+        tun = load("bluecat/config/tracker/tuning/state") or {}
+        overrides = {p["key"]: p["value"] for p in tun.get("params", [])
+                     if isinstance(p, dict) and p.get("overridden") and p.get("value") is not None}
+        for key, value in sorted(overrides.items()):  # einzeln: ein inzwischen ungültiger Wert kippt nicht alle
+            items.append(("bluecat/config/tracker/tuning/set", json.dumps({key: value}), False))
+    for topic in sorted(retained):
+        m = _SENSOR_STATE_RE.match(topic)
+        if not m:
+            continue
+        sid, kind, data = m.group(1), m.group(2), load(topic)
+        if not isinstance(data, dict):
+            continue
+        base = f"bluecat/config/sensors/{sid}"
+        if kind == "position" and "positions" in parts and data.get("configured"):
+            items.append((f"{base}/position_x/set", f"{float(data['x_cm']):.1f}", False))
+            items.append((f"{base}/position_y/set", f"{float(data['y_cm']):.1f}", False))
+            if data.get("height_set") and data.get("height_cm") is not None:
+                items.append((f"{base}/height/set", f"{float(data['height_cm']):.1f}", False))
+            if data.get("floor_cm") is not None:
+                items.append((f"{base}/floor/set", f"{float(data['floor_cm']):.1f}", False))
+        elif kind == "calibration" and "calibration" in parts:
+            for key, value in sorted(data.items()):
+                if isinstance(value, (int, float)) and re.fullmatch(r"[a-z_]+", key):
+                    items.append((f"{base}/calibration_{key}/set", f"{float(value):g}", False))
+    return items
+
+
+def cmd_tracker_restore(fleet: Fleet, path: Optional[str] = None, parts=RESTORE_PARTS, dry_run=False):
+    path = path or latest_backup()
+    if not path or not os.path.exists(path):
+        raise DeployError("Keine Sicherung gefunden – zuerst „Tracker-Stand sichern“")
+    with open(path, "r", encoding="utf-8") as handle:
+        data = json.load(handle)
+    retained = data.get("retained") if isinstance(data, dict) else None
+    if not isinstance(retained, dict):
+        raise DeployError(f"{path} ist keine Tracker-Sicherung")
+    info(f"Sicherung vom {data.get('created', '?')}: {_backup_summary(retained)}")
+    items = restore_messages(retained, parts)
+    if not items:
+        warn("Nichts wiederherzustellen")
+        return
+    if dry_run:
+        for topic, payload, _ in items:
+            print(f"  {topic} = {payload[:120]}")
+        return
+    status = mqtt_collect(fleet, ["bluecat/trilola/status"], seconds=2.0).get("bluecat/trilola/status")
+    if status != "online":
+        raise DeployError("Der Tracker ist nicht online – erst installieren/starten, dann wiederherstellen")
+    mqtt_publish_many(fleet, items)
+    ok(f"{len(items)} Einstellungen an den Tracker geschickt ({', '.join(parts)})")
+
+
 def cmd_tracker_stop(fleet: Fleet, node_id: str):
     """Hält nur trilola.service an (Umzug) – ohne die ganze Installation, damit nichts anderes den Umzug stört."""
     node = fleet.node(node_id)
@@ -1639,7 +1761,7 @@ def cmd_tracker_config(fleet: Fleet, action: str, node_id: str, local_dir: str):
 # Home-Assistant-App (Add-on) per SSH installieren
 # ---------------------------------------------------------------------------
 ADDON_EXCLUDE_DIRS = {"__pycache__", "config", "recordings", "tests", "plan", "ha_addon", "removed", "fixtures",
-                      "secrets", "devcontainer", "logo"}  # dazu alle versteckten Ordner (.pio, .venv, .tile_cache, .tracker_move …)
+                      "secrets", "devcontainer", "logo", "backup"}  # dazu alle versteckten Ordner (.pio, .venv, .tile_cache, .tracker_move …)
 ADDON_EXCLUDE_FILES = {"fleet.toml", ".cache.json", ".gui_token", "secrets_tri.py", "secrets_blue.py",
                        "secrets_ble.h", "error.txt"}
 
@@ -1687,6 +1809,7 @@ def build_addon_bundle(version: str) -> bytes:
                     if name.endswith((".sh", ".py")):
                         data = data.replace(b"\r\n", b"\n")
                     add_bytes(f"app/{rel}", data, 0o755 if name.endswith(".sh") else 0o644)
+        add_bytes("app/VERSION", (version + "\n").encode())  # die laufende App zeigt ihre Version an
     return buf.getvalue()
 
 
@@ -1748,6 +1871,20 @@ def _read_addon_version() -> str:
     return match.group(1).strip() if match else "1.0.0"
 
 
+def installed_app_version() -> Dict[str, str]:
+    """In der App: Version und Installationszeit aus app/VERSION („2.6.0-20260929183012“)."""
+    try:
+        with open(os.path.join(REPO, "VERSION"), encoding="utf-8") as handle:
+            full = handle.read().strip()
+    except OSError:
+        return {}
+    base, _, stamp = full.partition("-")
+    built = ""
+    if re.fullmatch(r"\d{14}", stamp):
+        built = f"{stamp[6:8]}.{stamp[4:6]}.{stamp[0:4]} {stamp[8:10]}:{stamp[10:12]}"
+    return {"version": base, "full": full, "installed": built}
+
+
 def _addon_ssh_key() -> Tuple[str, str]:
     """Eigener Schlüssel der App für die Pis (nicht der des PCs)."""
     key_dir = tempfile.mkdtemp(prefix="trilola_key_")
@@ -1788,12 +1925,19 @@ def export_addon(target: str):
        "„addons“ kopieren, dann in HA: App-Store → ⋮ → „Nach Updates suchen“ → „Lokale Apps“ → TriLola")
 
 
-def ha_install_script(start=True) -> str:
+def ha_install_script(start=True, version: str = "") -> str:
     """Shell-Skript für die SSH-App: TriLola installieren, aktualisieren oder neu bauen.
 
     Läuft in sh, bash *und* zsh (die App „Terminal & SSH“ nutzt zsh – dort wird ``$H "$@"`` nicht in
     Wörter zerlegt, deshalb keine Befehle in Variablen). Neue CLIs heißen ``ha apps``, ältere ``ha addons``.
+
+    Mit ``version`` wartet es, bis der App-Store genau diese Version kennt, bevor es aktualisiert – sonst
+    baute es mit der alten Versionsnummer neu, und Home Assistant bot danach ein Update an, das die
+    Supervisor-Seite als „No update available“ ablehnt. Danach prüft es die installierte Version und stößt
+    die Update-Anzeige in Home Assistant an.
     """
+    if version and not re.fullmatch(r"[0-9A-Za-z.+-]{1,64}", version):
+        raise DeployError(f"ungültige Versionsnummer {version!r}")
     lines = [
         "command -v ha >/dev/null || exit 90",
         "if ha apps --help >/dev/null 2>&1; then H=apps; else H=addons; fi",
@@ -1801,6 +1945,19 @@ def ha_install_script(start=True) -> str:
         # der erste Store-Reload lädt alle App-Stores und dauert oft länger, als „ha“ wartet
         "for i in 1 2 3 4; do (ha store reload || ha supervisor reload) >/dev/null 2>&1 && break; sleep 10; done",
         "info=$(hx info local_trilola --raw-json 2>/dev/null)",
+    ]
+    if version:
+        lines += [
+            f"V='{version}'",
+            'n=0; while [ "$n" -lt 12 ]; do',
+            r'''  printf '%s' "$info" | grep -q "\"version_latest\": *\"$V\"" && break''',
+            "  n=$((n + 1)); sleep 5; (ha store reload || ha supervisor reload) >/dev/null 2>&1",
+            "  info=$(hx info local_trilola --raw-json 2>/dev/null)",
+            "done",
+            r'''printf '%s' "$info" | grep -q "\"version_latest\": *\"$V\"" || '''
+            "echo '» Hinweis: Der App-Store zeigt die neue Version noch nicht – baue trotzdem neu.'",
+        ]
+    lines += [
         "if printf '%s' \"$info\" | grep -q '\"version\": *\"[0-9]'; then",
         "  if printf '%s' \"$info\" | grep -q '\"update_available\": *true'; then",
         "    echo '» Aktualisiere (Bauen dauert einige Minuten) ...'; hx update local_trilola || exit 91",
@@ -1814,6 +1971,25 @@ def ha_install_script(start=True) -> str:
     ]
     if start:
         lines.append("hx restart local_trilola 2>/dev/null || hx start local_trilola")
+    if version:
+        lines += [
+            "info=$(hx info local_trilola --raw-json 2>/dev/null)",
+            r'''if printf '%s' "$info" | grep -q "\"version\": *\"$V\""; then echo "» Installiert: $V"; '''
+            'else echo "» Achtung: installiert ist nicht $V – Einstellungen → Apps → TriLola prüfen"; fi',
+        ]
+    # Update-Anzeige in Home Assistant sofort auffrischen (sonst bis zu einigen Minuten veraltet); nur, wenn die
+    # SSH-App Zugriff auf die HA-API hat – sonst still überspringen.
+    lines += [
+        'if [ -n "${SUPERVISOR_TOKEN:-}" ] && command -v curl >/dev/null 2>&1; then',
+        '  for e in $(curl -s -m 10 -H "Authorization: Bearer $SUPERVISOR_TOKEN" http://supervisor/core/api/states'
+        r''' | grep -o '"entity_id": *"update\.[a-z0-9_]*trilola[a-z0-9_]*"' | grep -o 'update\.[a-z0-9_]*'); do''',
+        '    curl -s -m 10 -o /dev/null -X POST -H "Authorization: Bearer $SUPERVISOR_TOKEN"'
+        ' -H "Content-Type: application/json" -d "{\\"entity_id\\": \\"$e\\"}"'
+        ' http://supervisor/core/api/services/homeassistant/update_entity',
+        "  done",
+        "fi",
+        "exit 0",
+    ]
     return "\n".join(lines) + "\n"
 
 
@@ -1887,7 +2063,7 @@ def cmd_ha_addon(fleet: Fleet, host, port=22, user="root", migrate=False, start=
                         failed.append(node.id)
 
         # --- installieren / aktualisieren ---------------------------------------------------
-        script = ha_install_script(start)
+        script = ha_install_script(start, version)
         code, out, err = sh.run(script, check=False, timeout=3600)
         for line in (out + err).splitlines():
             if line.strip():
@@ -1960,6 +2136,13 @@ def main(argv=None):
     p.add_argument("action", choices=["pull", "push"])
     p.add_argument("node")
     p.add_argument("--dir", required=True, help="lokaler Ordner mit den *.json")
+    p = sub.add_parser("tracker-backup", help="Gespeicherten Tracker-Stand vom MQTT-Broker sichern")
+    p.add_argument("--out", help="Zieldatei (Standard: deploy/backup/tracker_<Zeit>.json)")
+    p = sub.add_parser("tracker-restore", help="Gesicherten Stand per MQTT in den (neuen) Tracker schreiben")
+    p.add_argument("file", nargs="?", help="Sicherung (Standard: die neueste)")
+    p.add_argument("--only", help="Auswahl, kommagetrennt: " + ",".join(RESTORE_PARTS))
+    p.add_argument("--skip", help="auslassen, kommagetrennt (z. B. calibration)")
+    p.add_argument("--dry-run", action="store_true", help="nur anzeigen")
     p = sub.add_parser("ha-addon", help="TriLola als App (Add-on) auf Home Assistant installieren")
     p.add_argument("--host")
     p.add_argument("--export", help="nur den App-Ordner hierhin schreiben (zum Kopieren per Samba)")
@@ -2012,6 +2195,15 @@ def main(argv=None):
             cmd_tracker_stop(fleet, args.node)
         elif args.command == "tracker-config":
             cmd_tracker_config(fleet, args.action, args.node, args.dir)
+        elif args.command == "tracker-backup":
+            cmd_tracker_backup(fleet, args.out)
+        elif args.command == "tracker-restore":
+            parts = [p for p in (args.only.split(",") if args.only else RESTORE_PARTS) if p]
+            skip = set(args.skip.split(",")) if args.skip else set()
+            unknown = set(parts) - set(RESTORE_PARTS) | (skip - set(RESTORE_PARTS))
+            if unknown:
+                raise DeployError(f"Unbekannt: {', '.join(sorted(unknown))} (möglich: {', '.join(RESTORE_PARTS)})")
+            cmd_tracker_restore(fleet, args.file, tuple(p for p in parts if p not in skip), dry_run=args.dry_run)
         elif args.command == "ha-addon":
             if not args.host:
                 raise DeployError("--host (IP von Home Assistant) oder --export ORDNER angeben")

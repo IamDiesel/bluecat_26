@@ -32,6 +32,7 @@ recordings/
 deploy/plan/
 deploy/.cache.json
 deploy/.tracker_move/
+deploy/backup/
 *.jsonl
 *.log
 # Mitschnitte von Geräten (enthalten Halsband-MAC, IPs, Pfade)

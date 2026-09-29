@@ -20,6 +20,11 @@ user = "admin"              # nur falls in der Shelly-Weboberfläche ein Passwor
 password = ""
 # subnet = "192.168.1.0/24" # für die automatische Suche (Standard: /24 des Brokers)
 
+# Hotspots (optional, nur in der Home-Assistant-App): Kippy-Tier wird sonst automatisch gefunden
+# [hotspots]
+# kippy_pet_id = "12345"       # petID aus der Kippy-Integration
+# home_radius_m = 30           # GPS-Punkte so nah am Haus zählen als „zu Hause“
+
 [tracker]
 node = "pi-wohnzimmer"      # id des Pi, auf dem der Tracker läuft
 target_mac = "aa:bb:cc:dd:ee:ff"   # MAC des Halsbands
@@ -32,6 +37,8 @@ origin_bearing_deg = 0.0
 
 # ---- Knoten ---------------------------------------------------------------
 # type = "pi":     host, ssh_user (Standard "pi"), optional ssh_port, tracker = true
+#                   bluetooth = "auto" | "usb" | "intern" (Standard auto: ein USB-Bluetooth-Stick wird
+#                   erkannt, bekommt seine Firmware, und der eingebaute Chip wird abgeschaltet)
 # type = "esp32":  ble_mac (steht im Tracker-Log bzw. in bt_tracker/config/<id>.json)
 # type = "shelly": wifi_mac (Aufkleber/Weboberfläche) oder host; legacy_id optional
 

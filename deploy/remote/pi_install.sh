@@ -237,12 +237,84 @@ if [ "$ROLE_SENSOR" = "1" ] && [ "${BLUETOOTH_EXPERIMENTAL:-1}" = "1" ]; then
     fi
 fi
 
+# USB-Bluetooth-Stick (z. B. mit externer Antenne): Firmware installieren und den eingebauten
+# Bluetooth-Chip abschalten, damit der Sensor sicher den Stick nimmt. BLUETOOTH=auto erkennt den Stick.
+REBOOT_NEEDED=0
+usb_bt_present() {
+    local d
+    for d in /sys/bus/usb/devices/*:*; do
+        [ -f "$d/bInterfaceClass" ] || continue
+        if [ "$(cat "$d/bInterfaceClass")" = "e0" ] && [ "$(cat "$d/bInterfaceSubClass" 2>/dev/null)" = "01" ] \
+            && [ "$(cat "$d/bInterfaceProtocol" 2>/dev/null)" = "01" ]; then return 0; fi
+    done
+    return 1
+}
+BT_MODE="${BLUETOOTH:-auto}"
+if [ "$ROLE_SENSOR" = "1" ] && [ "$BT_MODE" != "intern" ]; then
+    if usb_bt_present; then
+        log "USB-Bluetooth-Stick gefunden – nutze ihn statt des eingebauten Chips"
+        if ! dpkg -s firmware-realtek >/dev/null 2>&1; then
+            log "Installiere firmware-realtek (Firmware für die meisten USB-Sticks) ..."
+            sudo apt-get update -qq && sudo apt-get install -y -qq firmware-realtek \
+                || warn "firmware-realtek ließ sich nicht installieren – bei Realtek-Sticks nötig"
+        fi
+        CONFIG_TXT=/boot/firmware/config.txt
+        [ -f "$CONFIG_TXT" ] || CONFIG_TXT=/boot/config.txt
+        MODEL="$(tr -d '\0' < /proc/device-tree/model 2>/dev/null || true)"
+        case "$MODEL" in *"Raspberry Pi 5"*) BT_OVERLAY=disable-bt-pi5; WRONG_OVERLAY=disable-bt ;;
+                         *) BT_OVERLAY=disable-bt; WRONG_OVERLAY=disable-bt-pi5 ;; esac
+        if [ -f "$CONFIG_TXT" ] && ! sudo grep -Eq "^[[:space:]]*dtoverlay=${BT_OVERLAY}[[:space:]]*$" "$CONFIG_TXT"; then
+            sudo cp "$CONFIG_TXT" "$CONFIG_TXT.bak-$STAMP"
+            if sudo grep -Eq "^[[:space:]]*dtoverlay=${WRONG_OVERLAY}[[:space:]]*$" "$CONFIG_TXT"; then
+                log "config.txt: dtoverlay=${WRONG_OVERLAY} passt nicht zu diesem Modell ($MODEL) → ${BT_OVERLAY}"
+                sudo sed -i -E "s/^[[:space:]]*dtoverlay=${WRONG_OVERLAY}[[:space:]]*$/dtoverlay=${BT_OVERLAY}/" "$CONFIG_TXT"
+            else
+                log "config.txt: eingebauten Bluetooth-Chip abschalten (dtoverlay=${BT_OVERLAY})"
+                printf '\n[all]\n# bluecat: USB-Bluetooth-Stick statt eingebautem Chip\ndtoverlay=%s\n' "$BT_OVERLAY" \
+                    | sudo tee -a "$CONFIG_TXT" >/dev/null
+            fi
+            REBOOT_NEEDED=1
+        fi
+        if [ "$BT_OVERLAY" = "disable-bt" ] && systemctl is-enabled --quiet hciuart.service 2>/dev/null; then
+            sudo systemctl disable hciuart.service >/dev/null 2>&1 || true
+        fi
+    elif [ "$BT_MODE" = "usb" ]; then
+        warn "BLUETOOTH=usb, aber kein USB-Bluetooth-Stick gefunden – steckt er?"
+    fi
+fi
+
+# Bluetooth einschalten: Auf frisch installiertem Raspberry Pi OS ist der Adapter oft per rfkill
+# gesperrt oder nach dem Neustart von bluetoothd noch aus („No powered Bluetooth adapters found“).
+# (Nicht vor einem anstehenden Neustart: dann übernimmt der Stick erst danach – der Dienst schaltet ihn selbst ein.)
+if [ "$ROLE_SENSOR" = "1" ] && [ "$REBOOT_NEEDED" = "0" ]; then
+    if command -v rfkill >/dev/null 2>&1; then sudo rfkill unblock bluetooth 2>/dev/null || true; fi
+    if [ -f /etc/bluetooth/main.conf ] && sudo grep -Eq '^[[:space:]]*AutoEnable[[:space:]]*=[[:space:]]*false' /etc/bluetooth/main.conf; then
+        log "Bluetooth: AutoEnable=true (Adapter nach jedem Start einschalten)"
+        sudo sed -i -E 's/^[[:space:]]*AutoEnable[[:space:]]*=.*/AutoEnable=true/' /etc/bluetooth/main.conf
+        sudo systemctl restart bluetooth.service
+    fi
+    BT_ON=0
+    for _ in $(seq 1 15); do
+        if bluetoothctl show 2>/dev/null | grep -q 'Powered: yes'; then BT_ON=1; break; fi
+        sudo bluetoothctl power on >/dev/null 2>&1 || true
+        sleep 1
+    done
+    if [ "$BT_ON" = "1" ]; then
+        log "Bluetooth-Adapter eingeschaltet ✔"
+    else
+        warn "Bluetooth-Adapter lässt sich nicht einschalten – auf dem Pi prüfen: rfkill list; bluetoothctl show"
+        if ! usb_bt_present; then
+            warn "(Ohne USB-Stick darf in config.txt kein dtoverlay=disable-bt stehen.)"
+        fi
+    fi
+fi
+
 # ---------------------------------------------------------------------------
 # 4. systemd-Dienste
 # ---------------------------------------------------------------------------
 : > "$BASE/.rollback.new"
-write_unit() {  # name, beschreibung, arbeitsverzeichnis, skript
-    local name="$1" desc="$2" dir="$3" script="$4" tmp
+write_unit() {  # name, beschreibung, arbeitsverzeichnis, skript, [zusätzliche Zeilen für [Service]]
+    local name="$1" desc="$2" dir="$3" script="$4" extra="${5:-}" tmp
     tmp="$(mktemp)"
     cat > "$tmp" <<UNIT
 # Verwaltet von deploy/bluecat_deploy.py – Änderungen werden überschrieben.
@@ -254,7 +326,7 @@ Wants=network-online.target
 [Service]
 User=$USER
 WorkingDirectory=$dir
-ExecStart=$BASE/venv/bin/python -u $script
+${extra}ExecStart=$BASE/venv/bin/python -u $script
 Restart=always
 RestartSec=5
 
@@ -285,7 +357,17 @@ for unit_file in "$UNIT_DIR"/*.service; do
 done
 
 if [ "$ROLE_SENSOR" = "1" ]; then
-    write_unit bluecat-sensor.service "Bluecat BLE-Sensor ($NODE_ID)" "$BASE/sensor" bluecat2mqtt.py
+    # Vor jedem Start Bluetooth entsperren und einschalten (mit Root-Rechten, „+“): Raspberry Pi OS stellt beim
+    # Booten gespeicherte rfkill-Sperren wieder her – sonst „No powered Bluetooth adapters found“.
+    BT_PRE=""
+    RFKILL_BIN="$(command -v rfkill || true)"
+    BTCTL_BIN="$(command -v bluetoothctl || true)"
+    TIMEOUT_BIN="$(command -v timeout || true)"
+    if [ -n "$RFKILL_BIN" ]; then BT_PRE+="ExecStartPre=-+$RFKILL_BIN unblock bluetooth"$'\n'; fi
+    if [ -n "$BTCTL_BIN" ] && [ -n "$TIMEOUT_BIN" ]; then
+        BT_PRE+="ExecStartPre=-+$TIMEOUT_BIN 10 $BTCTL_BIN power on"$'\n'
+    fi
+    write_unit bluecat-sensor.service "Bluecat BLE-Sensor ($NODE_ID)" "$BASE/sensor" bluecat2mqtt.py "$BT_PRE"
 fi
 if [ "$ROLE_TRACKER" = "1" ]; then
     write_unit trilola.service "TriLola Tracker" "$BASE/tracker" trilola_tracker.py
@@ -313,9 +395,17 @@ fi
 # ---------------------------------------------------------------------------
 # 5. Kontrolle
 # ---------------------------------------------------------------------------
+if [ "$REBOOT_NEEDED" = "1" ]; then
+    log "Neustart in 5 s, damit der eingebaute Bluetooth-Chip aus ist und der Stick übernimmt."
+    log "Danach laufen Sensor und Tracker von selbst – in etwa einer Minute ist der Pi wieder online."
+    sudo systemd-run --quiet --on-active=5 /bin/systemctl reboot 2>/dev/null || (sleep 5; sudo reboot) &
+    exit 0
+fi
 sleep "${VERIFY_WAIT_SEC:-6}"
 STATUS=0
 for unit in $( [ "$ROLE_SENSOR" = "1" ] && echo bluecat-sensor.service ) $( [ "$ROLE_TRACKER" = "1" ] && echo trilola.service ); do
+    # ein Dienst im Neustart (z. B. Adapter kam eine Sekunde zu spät) bekommt eine zweite Chance
+    for _ in 1 2 3; do systemctl is-active --quiet "$unit" && break; sleep 5; done
     if systemctl is-active --quiet "$unit"; then
         log "$unit läuft ✔"
     else

@@ -26,7 +26,7 @@ import traceback
 import uuid
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 import math
 import urllib.request
 from urllib.parse import parse_qs, urlencode, urlparse
@@ -34,6 +34,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import bluecat_deploy as bd  # noqa: E402
+import hotspots as hs  # noqa: E402
 
 REPO = bd.REPO
 DEPLOY_SCRIPT = os.path.join(HERE, "bluecat_deploy.py")
@@ -76,7 +77,20 @@ def read_repo_versions() -> Dict[str, str]:
         "shelly": grab(bd.SHELLY_SCRIPT, r'SCRIPT_VERSION = "([^"]+)"'),
         "pi": grab(os.path.join(bd.PI_SENSOR_DIR, "bluecat2mqtt.py"), r'SENSOR_VERSION = "([^"]+)"'),
         "tracker": grab(os.path.join(bd.TRACKER_DIR, "network", "ha_discovery.py"), r'TRACKER_VERSION = "([^"]+)"'),
+        "app": grab(os.path.join(bd.ADDON_SRC_DIR, "config.yaml"), r'(?m)^version:\s*"?([^"\n]+)"?'),
     }
+
+
+APP_VERSION_TOPIC = "bluecat/trilola/app/version"
+
+
+def app_version_discovery(version: str) -> list:
+    """Diagnose-Entität „App-Version“ am TriLola-Gerät in Home Assistant (neben der Tracker-Firmware)."""
+    return [("homeassistant/sensor/bluecat_trilola_app_version/config", json.dumps({
+        "name": "App-Version", "unique_id": "bluecat_trilola_app_version",
+        "state_topic": APP_VERSION_TOPIC, "entity_category": "diagnostic", "icon": "mdi:application-cog",
+        "device": {"identifiers": ["bluecat_trilola_engine"]},
+    })), (APP_VERSION_TOPIC, version)]
 
 
 PLAN_TOPICS = {
@@ -100,12 +114,14 @@ class LiveState:
               "bluecat/config/sensors/+/enabled/state", "bluecat/config/floorplan/state",
               "bluecat/config/tracker/georef/state", "bluecat/trilola/radio_map", "bluecat/trilola/live",
               "bluecat/trilola/gps/state", "bluecat/config/calibration/state",
-              "bluecat/config/tracker/tuning/state", TRACKER_DISCOVERY_TOPIC]
+              "bluecat/config/tracker/tuning/state", TRACKER_DISCOVERY_TOPIC, APP_VERSION_TOPIC]
 
     def __init__(self):
         self.lock = threading.Lock()
         self.client = None
         self.config = None
+        self.on_live = None  # Rückruf für jede Live-Meldung des Trackers (Hotspot-Aufzeichnung)
+        self.announce: List[Tuple[str, str]] = []  # nach jedem Verbinden (retained) veröffentlichen
         self.connected = False
         self.error = ""
         self.identities: Dict[str, dict] = {}
@@ -183,6 +199,8 @@ class LiveState:
         self.error = ""
         for topic in self.TOPICS:
             client.subscribe(topic)
+        for topic, payload in self.announce:
+            client.publish(topic, payload, qos=1, retain=True)
 
     def _on_disconnect(self, client, userdata, flags, reason_code, properties=None):
         if client is not self.client:
@@ -229,6 +247,9 @@ class LiveState:
                 self.tracker["room"] = payload
             elif msg.topic == "bluecat/config/tracker/engine/state":
                 self.tracker["engine"] = payload
+            elif msg.topic == APP_VERSION_TOPIC:
+                # die App in Home Assistant meldet ihre Version (retained) – so sieht sie auch die Oberfläche am PC
+                self.tracker["app"] = payload.strip()[:40]  # (Lock ist hier schon gehalten)
             elif msg.topic == TRACKER_DISCOVERY_TOPIC:
                 try:
                     device = (json.loads(payload) if payload else {}).get("device") or {}
@@ -258,6 +279,11 @@ class LiveState:
                     return
                 if key == "live":
                     self.plan["live_at"] = now
+                    if self.on_live is not None and not msg.retain:
+                        try:
+                            self.on_live(self.plan["live"])
+                        except Exception:  # noqa: BLE001 – Aufzeichnung darf die Oberfläche nie stören
+                            pass
             elif len(parts) == 3 and parts[1] == "provision":
                 if payload:
                     try:
@@ -648,12 +674,22 @@ class App:
         self.ingress = False
         self.addon = bd.IN_ADDON
         self.local_tracker = LocalTracker(bd.TRACKER_HOME) if self.addon else None
+        # Hotspots: aufgezeichnet wird nur in der Home-Assistant-App (läuft dauerhaft, hat Zugriff auf HA)
+        self.hotspots = hs.Hotspots(os.path.join(bd.DATA_DIR, "hotspots"), record=self.addon,
+                                    settings=self._hotspot_settings)
+        if self.hotspots.recorder is not None:
+            self.live.on_live = self.hotspots.recorder.on_live
+        self.app_version = bd.installed_app_version() if self.addon else {}
+        if self.app_version.get("version"):
+            self.live.announce = app_version_discovery(self.app_version["version"])
         self._ensure_fleet_file()
         self._apply_live_config()
 
     # ---- Hintergrund (nur App) -------------------------------------------
     def start_background(self):
         os.environ["BLUECAT_FLEET"] = self.fleet_path
+        if self.hotspots.recorder is not None:
+            threading.Thread(target=self.hotspots.prune, daemon=True).start()
         if self.local_tracker is None:
             return
         try:
@@ -664,6 +700,8 @@ class App:
             self.local_tracker.start(fleet)
 
     def stop_background(self):
+        if self.hotspots.recorder is not None:
+            self.hotspots.recorder.flush()
         if self.local_tracker is not None:
             self.local_tracker.stop()
 
@@ -707,6 +745,38 @@ class App:
             return f"{stat.st_mtime_ns}-{stat.st_size}"
         except OSError:
             return ""
+
+    def _hotspot_settings(self) -> dict:
+        try:
+            return dict(bd.read_fleet_data(self.fleet_path).get("hotspots") or {})
+        except bd.DeployError:
+            return {}
+
+    def hotspots_view(self, query: dict) -> dict:
+        snap = self.live.plan_snapshot()
+        period = (query.get("period") or ["week"])[0]
+        if period not in hs.PERIOD_DAYS:
+            raise bd.DeployError("Zeitraum: day, week, month oder year")
+        end = (query.get("end") or [""])[0] or None
+        if end and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", end):
+            raise bd.DeployError("Datum im Format JJJJ-MM-TT")
+        georef = dict(snap["plan"].get("georef") or {})
+        if georef.get("lat") is None:
+            try:
+                tracker = self.fleet_data().get("tracker", {})
+                georef = {k: tracker.get(k) for k in ("origin_lat", "origin_lon", "reference_lat", "reference_lon")}
+            except bd.DeployError:
+                pass
+        outdoor = (query.get("outdoor") or ["1"])[0] != "0"
+
+        def num(name):
+            try:
+                return float((query.get(name) or [""])[0])
+            except ValueError:
+                return None
+        return self.hotspots.query(period, end, snap["plan"].get("floorplan"), georef, want_outdoor=outdoor,
+                                   in_cell=num("in_cell"), out_cell=num("out_cell"),
+                                   since=(query.get("since") or [""])[0][:40] or None)
 
     def fleet_data(self):
         data = bd.read_fleet_data(self.fleet_path)
@@ -834,6 +904,7 @@ class App:
             "rev": self.rev(),
             "sudo_remembered": sorted(self.sudo_passwords),
             "addon": self.addon,
+            "app": self.app_version,
             "local_tracker": self.local_tracker.status() if self.local_tracker else None,
             "ignored": len(ignored),
         }
@@ -1039,9 +1110,11 @@ class App:
         if cmd not in CALIBRATION_COMMANDS:
             raise bd.DeployError(f"unbekannter Kalibrierbefehl {cmd!r}")
         self._require_tracker()
-        payload = {k: v for k, v in body.items() if k in {"cmd", "x", "y", "duration_s", "id", "label", "per_sensor_n",
+        payload = {k: v for k, v in body.items() if k in {"cmd", "x", "y", "z", "duration_s", "id", "label", "per_sensor_n",
                                                           "sensors", "n", "walls"}}
-        for key in ("x", "y", "duration_s"):
+        if payload.get("z") in (None, ""):
+            payload.pop("z", None)
+        for key in ("x", "y", "z", "duration_s"):
             if key in payload:
                 value = float(payload[key])
                 if not math.isfinite(value):
@@ -1219,6 +1292,13 @@ class App:
             steps, title = self._tracker_move_steps(fleet, str(opts.get("from") or ""), str(opts.get("to") or ""),
                                                     sudo_env)
             node_id = None
+        elif action == "tracker_backup":
+            steps = [{"label": "Sichern", "args": ["tracker-backup"]}]
+            title = "Tracker-Stand sichern (vom MQTT-Broker)"
+        elif action == "tracker_restore":
+            args = ["tracker-restore"] + ([] if opts.get("calibration") else ["--skip", "calibration"])
+            steps = [{"label": "Wiederherstellen", "args": args}]
+            title = "Tracker-Stand wiederherstellen"
         elif action == "tracker_restart":
             steps = [{"label": "Tracker", "call": self._call_local_tracker("restart")}]
             title = "Tracker in der App neu starten"
@@ -1494,7 +1574,16 @@ def save_calibration_plan(points) -> list:
         pid = str(p.get("id") or "")[:32]
         if not re.fullmatch(r"[A-Za-z0-9_-]{1,32}", pid):
             raise bd.DeployError("Kalibrierplan: ungültige Punkt-ID")
-        clean.append({"id": pid, "x": round(x, 1), "y": round(y, 1), "label": str(p.get("label") or "")[:40]})
+        item = {"id": pid, "x": round(x, 1), "y": round(y, 1), "label": str(p.get("label") or "")[:40]}
+        if p.get("z") not in (None, ""):  # Höhe des Halsbands über dem Fußboden (cm), optional
+            try:
+                z = float(p["z"])
+            except (TypeError, ValueError):
+                raise bd.DeployError("Kalibrierplan: ungültige Höhe")
+            if not (math.isfinite(z) and 0.0 <= z <= 600.0):
+                raise bd.DeployError("Kalibrierplan: Höhe außerhalb 0…6 m")
+            item["z"] = round(z, 1)
+        clean.append(item)
     os.makedirs(PLAN_DIR, exist_ok=True)
     tmp = os.path.join(PLAN_DIR, "calibration_plan.json.tmp")
     with open(tmp, "w", encoding="utf-8") as handle:
@@ -1614,7 +1703,10 @@ def make_handler(app: App, port: int, ingress: bool = False):
             self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("Referrer-Policy", "no-referrer")
             self.end_headers()
-            self.wfile.write(data)
+            try:
+                self.wfile.write(data)
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+                pass  # Browser hat abgebrochen (z. B. Kartenkachel beim Zoomen nicht mehr gebraucht) – harmlos
 
         def _guard(self, api=True, same_site=False):
             if ingress:
@@ -1713,6 +1805,8 @@ def make_handler(app: App, port: int, ingress: bool = False):
                     self._send(200, list_serial_ports())
                 elif url.path == "/api/plan":
                     self._send(200, app.plan())
+                elif url.path == "/api/hotspots":
+                    self._send(200, app.hotspots_view(parse_qs(url.query)))
                 elif url.path == "/api/live":
                     self._send(200, app.live_view())
                 elif url.path == "/api/tuning":
